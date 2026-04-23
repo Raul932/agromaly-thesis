@@ -1,0 +1,64 @@
+# ==============================================================================
+# Agromaly Backend — Python Dependencies
+# Python 3.12+
+# ==============================================================================
+
+# --- Web Framework ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20         # For file uploads (GPX ingestion)
+
+# --- Settings & Validation ---
+pydantic==2.10.6
+pydantic-settings==2.7.1
+
+# --- Security & Auth ---
+python-jose[cryptography]==3.3.0  # JWT tokens
+passlib[argon2]==1.7.4            # Argon2 password hashing
+argon2-cffi==23.1.0
+
+# --- Database & ORM ---
+sqlalchemy==2.0.36                 # Async-capable ORM
+asyncpg==0.30.0                    # Async PostgreSQL driver
+alembic==1.14.0                    # Database migrations
+geoalchemy2==0.17.1                # PostGIS integration for SQLAlchemy
+psycopg2-binary==2.9.10            # Sync driver (used by Alembic migrations)
+
+# --- Geospatial ---
+shapely==2.0.6                     # Geometry objects (Polygon, Point, etc.)
+pyproj==3.7.0                      # CRS transformations
+gpxpy==1.6.2                       # GPX file parsing
+
+# --- Async Task Queue ---
+celery==5.4.0
+redis==5.2.1
+flower==2.0.1                      # Celery monitoring UI
+
+# --- AI / ML ---
+torch==2.5.1                       # PyTorch (LSTM Autoencoder)
+numpy==2.2.1
+scikit-learn==1.6.1                # Preprocessing, metrics
+
+# --- LangChain / RAG ---
+langchain==0.3.15
+langchain-openai==0.3.1
+langchain-community==0.3.15
+chromadb==0.6.3                    # Local vector store
+openai==1.59.9                     # OpenAI API client
+
+# --- HTTP Clients ---
+httpx==0.28.1                      # Async HTTP (weather API, external calls)
+
+# --- Logging & Observability ---
+structlog==25.1.0                  # Structured JSON logging
+
+# --- Testing ---
+pytest==8.3.4
+pytest-asyncio==0.25.2
+httpx==0.28.1                      # For TestClient
+pytest-cov==6.0.0
+factory-boy==3.3.1
+
+pydantic[email]>=2.5.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.6

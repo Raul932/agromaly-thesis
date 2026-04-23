@@ -1,0 +1,60 @@
+"""
+FastAPI Dependency Factories
+==============================
+Provides ``Depends``-compatible factory functions that wire the concrete
+repository implementations into the application services for each request.
+
+Design:
+    Each factory creates a fresh repository / service for every request, using
+    the request-scoped ``AsyncSession`` from ``get_async_session``. This ensures:
+        - No shared mutable state between requests.
+        - Clean transaction boundaries per request.
+        - Testability via dependency_overrides.
+
+Usage in endpoints::
+
+    @router.post("/example")
+    async def example(
+        service: UserService = Depends(get_user_service),
+    ):
+        ...
+"""
+
+from __future__ import annotations
+
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.application.services.parcel_service import ParcelService
+from app.application.services.user_service import UserService
+from app.infrastructure.db.session import get_async_session
+from app.infrastructure.repositories.parcel_repository_impl import ParcelRepositoryImpl
+from app.infrastructure.repositories.user_repository_impl import UserRepositoryImpl
+
+
+def get_user_repo(
+    session: AsyncSession = Depends(get_async_session),
+) -> UserRepositoryImpl:
+    """Create a UserRepositoryImpl for the current request's session."""
+    return UserRepositoryImpl(session)
+
+
+def get_parcel_repo(
+    session: AsyncSession = Depends(get_async_session),
+) -> ParcelRepositoryImpl:
+    """Create a ParcelRepositoryImpl for the current request's session."""
+    return ParcelRepositoryImpl(session)
+
+
+def get_user_service(
+    repo: UserRepositoryImpl = Depends(get_user_repo),
+) -> UserService:
+    """Create a UserService backed by the request-scoped UserRepository."""
+    return UserService(user_repo=repo)
+
+
+def get_parcel_service(
+    repo: ParcelRepositoryImpl = Depends(get_parcel_repo),
+) -> ParcelService:
+    """Create a ParcelService backed by the request-scoped ParcelRepository."""
+    return ParcelService(parcel_repo=repo)

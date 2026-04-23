@@ -1,0 +1,13 @@
+# This directory holds Alembic auto-generated migration scripts.
+# 
+# To generate a new migration after changing ORM models:
+#   docker compose exec api alembic revision --autogenerate -m "describe your change"
+#
+# To apply pending migrations:
+#   docker compose exec api alembic upgrade head
+#
+# To roll back the last migration:
+#   docker compose exec api alembic downgrade -1
+#
+# IMPORTANT: Always review auto-generated scripts before applying to production.
+# PostGIS-related objects are filtered out in env.py, but check the diff carefully.

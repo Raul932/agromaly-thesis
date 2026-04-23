@@ -1,0 +1,150 @@
+# ==============================================================================
+# Agromaly — Docker Compose (Development)
+# Runs: PostgreSQL+PostGIS, Redis, FastAPI backend, Celery worker, Flower UI
+# Usage: docker compose up --build
+# ==============================================================================
+
+version: "3.9"
+
+services:
+  # ----------------------------------------------------------------------------
+  # PostgreSQL 16 with PostGIS 3.4
+  # ----------------------------------------------------------------------------
+  db:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: agromaly_db
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agromaly_net
+
+  # ----------------------------------------------------------------------------
+  # Redis 7 — Celery broker + result backend
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: agromaly_redis
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agromaly_net
+
+  # ----------------------------------------------------------------------------
+  # FastAPI Backend
+  # ----------------------------------------------------------------------------
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: agromaly_api
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override host references so they resolve to container names
+      POSTGRES_HOST: db
+      REDIS_HOST: redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app # Hot-reload in dev
+      - chroma_data:/app/data/chroma
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - agromaly_net
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
+
+  # ----------------------------------------------------------------------------
+  # Celery Worker
+  # ----------------------------------------------------------------------------
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: agromaly_celery
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      POSTGRES_HOST: db
+      REDIS_HOST: redis
+    volumes:
+      - ./backend:/app
+      - chroma_data:/app/data/chroma
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - agromaly_net
+    command: >
+      celery -A app.core.celery_app worker --loglevel=info --concurrency=4 -Q default,anomaly_detection,weather_alerts
+
+  # ----------------------------------------------------------------------------
+  # Flower — Celery Monitoring UI
+  # ----------------------------------------------------------------------------
+  flower:
+    image: mher/flower:2.0
+    container_name: agromaly_flower
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:-admin:admin}
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - celery_worker
+    networks:
+      - agromaly_net
+
+# ==============================================================================
+# Named Volumes
+# ==============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  chroma_data:
+    driver: local
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+networks:
+  agromaly_net:
+    driver: bridge

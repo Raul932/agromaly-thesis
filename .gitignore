@@ -210,11 +210,19 @@ __marimo__/
 # Environment variables
 .env
 .env.*
+!.env.example
+!.env.template
 
 # Python Virtual Environments
 .venv/
 venv/
 env/
+
+# Mac / Apple ignores
+.DS_Store
+
+# Docker ignores
+docker-compose.override.yml
 
 # Modele PyTorch / Machine Learning
 *.pt
