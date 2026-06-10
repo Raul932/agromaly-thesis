@@ -237,3 +237,14 @@ models/saved_models/
 # Fișiere generate de IDE
 .vscode/
 .idea/
+# ChromaDB vector store (generated at runtime)
+backend/data/chroma/
+
+# Raw training data (contains real parcel coordinates — private)
+backend/data/training/*.parquet
+backend/data/training_gpx/
+backend/data/RO009055925_2026.gpx
+
+# Allow Flutter lib/ directory (overrides the Python lib/ exclusion above)
+!frontend/lib/
+!frontend/lib/**

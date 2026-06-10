@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, List
 
-from sqlalchemy import Boolean, DateTime, Index, String, func
+from sqlalchemy import Boolean, DateTime, Index, String, func, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -50,7 +50,7 @@ class UserORM(Base):
         # Case-insensitive unique index on email for PostgreSQL
         Index(
             "uix_users_email_lower",
-            func.lower(email_col := "email"),  # type: ignore[arg-type]
+            text("lower(email)"),
             unique=True,
         ),
     )

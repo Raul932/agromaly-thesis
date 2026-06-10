@@ -1,0 +1,30 @@
+{
+  "input_size": 1,
+  "hidden_size": 64,
+  "num_layers": 2,
+  "latent_dim": 16,
+  "window_size": 30,
+  "dropout": 0.0,
+  "anomaly_threshold": 0.024299316108226776,
+  "threshold_strategy": "max(p99, mean+3std) on normal training windows",
+  "feature_names": [
+    "ndvi_mean"
+  ],
+  "training_date": "2026-06-09T23:34:42.700696",
+  "training_parcels": 20,
+  "parcel_split": {
+    "train": 14,
+    "val": 3,
+    "test": 3
+  },
+  "data_source": "real_apia_gpx",
+  "roc_auc": 0.51341,
+  "best_f1": 0.0,
+  "precision": 0.0,
+  "recall": 0.0,
+  "false_positives": 35,
+  "best_val_loss": 0.0092403081,
+  "mse_normal_p99": 0.0242993161,
+  "mse_normal_mean3std": 0.0200387966,
+  "epochs_trained": 157
+}

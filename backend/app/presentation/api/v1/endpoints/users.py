@@ -2,12 +2,13 @@
 Router: Users
 ==============
 Endpoints:
-    POST /api/v1/users/register  — Create a new account
+    POST /api/v1/users/signup    — Create a new account (mobile-friendly alias)
+    POST /api/v1/users/register  — Create a new account (API / Swagger alias)
     POST /api/v1/users/login     — Authenticate and receive JWT tokens
     GET  /api/v1/users/me        — Fetch the current user's profile (protected)
 
 Security:
-    - ``/register`` and ``/login`` are public (no auth required).
+    - ``/signup``, ``/register``, and ``/login`` are public (no auth required).
     - ``/me`` requires a valid JWT via ``get_current_user`` dependency.
     - Passwords are NEVER echoed in any response.
     - Domain exceptions are mapped to structured HTTP responses in ``main.py``.
@@ -35,6 +36,47 @@ router = APIRouter(prefix="/users", tags=["Users"])
 # ---------------------------------------------------------------------------
 # Public Endpoints
 # ---------------------------------------------------------------------------
+
+async def _register_user(
+    payload: UserCreate,
+    service: UserService,
+) -> UserResponse:
+    """Shared handler for both /signup and /register."""
+    try:
+        user = await service.register(payload)
+        return UserResponse.model_validate(user, from_attributes=True)
+    except EmailAlreadyRegisteredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.message,
+        )
+
+
+@router.post(
+    "/signup",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Sign up — create a new user account (mobile-friendly)",
+    responses={
+        400: {"description": "Email already registered"},
+        422: {"description": "Validation error"},
+    },
+)
+async def signup(
+    payload: UserCreate,
+    service: UserService = Depends(get_user_service),
+) -> UserResponse:
+    """Mobile-friendly sign-up endpoint.
+
+    Identical to ``/register`` but returns HTTP 400 (instead of 409) so that
+    Flutter HTTP clients can handle the duplicate-email case consistently.
+
+    - Validates email format and password strength (min 8 chars, 1 digit, 1 letter).
+    - Hashes password with Argon2 before storage.
+    - Returns the created user (without ``hashed_password``).
+    """
+    return await _register_user(payload, service)
+
 
 @router.post(
     "/register",

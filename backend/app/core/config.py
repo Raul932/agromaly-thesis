@@ -96,6 +96,28 @@ class Settings(BaseSettings):
     WEATHER_API_KEY: str = Field(default="")
 
     # ------------------------------------------------------------------
+    # Sentinel Hub — Copernicus Data Space Ecosystem
+    # ------------------------------------------------------------------
+    SENTINEL_CLIENT_ID: str = Field(default="")
+    SENTINEL_CLIENT_SECRET: str = Field(default="")
+    SENTINEL_HUB_BASE_URL: str = Field(
+        default="https://sh.dataspace.copernicus.eu",
+        description="Sentinel Hub base URL (Copernicus Data Space Ecosystem)",
+    )
+    USE_MOCK_SATELLITE: bool = Field(
+        default=False,
+        description="If True, use mock NDVI data instead of real Sentinel Hub API",
+    )
+
+    # ------------------------------------------------------------------
+    # ML Model
+    # ------------------------------------------------------------------
+    ML_MODEL_DIR: str = Field(
+        default="/app/data/models",
+        description="Directory containing lstm_autoencoder.pt, scaler_params.json, model_config.json",
+    )
+
+    # ------------------------------------------------------------------
     # Vector Store
     # ------------------------------------------------------------------
     CHROMA_PERSIST_DIRECTORY: str = Field(default="/app/data/chroma")

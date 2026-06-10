@@ -21,12 +21,13 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.core.config import settings
 from app.core.exceptions import (
@@ -77,6 +78,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Import engine here to dispose it cleanly on shutdown
     from app.infrastructure.db.session import _engine
+
+    # Initialize RAG service (non-fatal — warns if OpenAI key missing)
+    from app.application.services.rag_service import initialize_rag_service, get_rag_service
+    rag = initialize_rag_service()
+
+    # Auto-ingest knowledge base PDFs if ChromaDB collection is empty
+    if rag is not None and rag.is_knowledge_base_empty():
+        try:
+            import sys, os
+            sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+            from scripts.ingest_knowledge_base import ingest
+            kb_dir = Path(__file__).parent.parent.parent / "data" / "knowledge_base"
+            n = ingest(
+                chroma_dir=settings.CHROMA_PERSIST_DIRECTORY,
+                pdf_dir=str(kb_dir),
+            )
+            if n > 0:
+                logger.info("Knowledge base ingested: %d chunks loaded.", n)
+            else:
+                logger.info("No PDFs found in knowledge_base/ — RAG will use LLM-only mode.")
+        except Exception as kb_exc:
+            logger.warning("Knowledge base auto-ingestion failed: %s", kb_exc)
 
     yield   # Application runs here
 
@@ -219,3 +242,31 @@ async def health_check() -> dict:
         "version": settings.APP_VERSION,
         "environment": settings.APP_ENV,
     }
+
+
+# ---------------------------------------------------------------------------
+# GPX Upload Portal — browser-facing HTML page (not under /api/v1)
+# ---------------------------------------------------------------------------
+
+_PORTAL_HTML_PATH = Path(__file__).parent / "static" / "upload_portal.html"
+
+
+@app.get(
+    "/upload/{token}",
+    response_class=HTMLResponse,
+    include_in_schema=False,   # Hide from Swagger — it's a browser page, not an API
+)
+async def upload_portal(token: str) -> HTMLResponse:
+    """Serve the drag-and-drop GPX upload portal for a specific session token.
+
+    The PC browser opens this URL after scanning the QR code displayed on the
+    mobile app. The page POSTs files to /api/v1/upload/{token}/files.
+    """
+    try:
+        html_content = _PORTAL_HTML_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return HTMLResponse(
+            content="<h1>Upload portal not found</h1>",
+            status_code=404,
+        )
+    return HTMLResponse(content=html_content)

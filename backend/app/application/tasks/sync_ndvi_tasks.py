@@ -51,26 +51,26 @@ logger = get_task_logger(__name__)
     acks_late=True,
 )
 def sync_ndvi_for_parcel(self, parcel_id_str: str) -> dict:
-    """Celery task: fetch NDVI satellite data and persist to DB.
-
-    Args:
-        parcel_id_str: UUID of the parcel as a JSON-serializable string.
-
-    Returns:
-        Dict with saved record count, cloudy count, and updated last_ndvi.
-    """
+    """Celery task: fetch NDVI satellite data and persist to DB."""
+    print(f"--- CELERY NDVI TASK RECEIVED --- parcel_id={parcel_id_str}")
     logger.info("sync_ndvi_for_parcel started: parcel_id=%s", parcel_id_str)
     try:
         result = asyncio.run(_async_sync_ndvi(parcel_id_str))
+        print(
+            f"--- CELERY NDVI TASK SUCCESS --- parcel_id={parcel_id_str} "
+            f"records={result['records_saved']} cloudy={result['cloudy_records']} "
+            f"last_ndvi={result.get('last_ndvi') or 'N/A'}"
+        )
         logger.info(
-            "sync_ndvi_for_parcel done: parcel_id=%s records=%d cloudy=%d last_ndvi=%.4f",
+            "sync_ndvi_for_parcel done: parcel_id=%s records=%d cloudy=%d last_ndvi=%s",
             parcel_id_str,
             result["records_saved"],
             result["cloudy_records"],
-            result.get("last_ndvi") or 0.0,
+            result.get("last_ndvi") or "N/A",
         )
         return result
     except Exception as exc:
+        print(f"--- CELERY NDVI TASK FAILED --- parcel_id={parcel_id_str} error={exc}")
         logger.error("sync_ndvi_for_parcel failed: %s", exc, exc_info=True)
         raise
 
@@ -99,25 +99,22 @@ async def _async_sync_ndvi(parcel_id_str: str) -> dict:
             parcel_repo = ParcelRepositoryImpl(session)
             parcel = await parcel_repo.get_by_id(parcel_id)
             if parcel is None:
-                logger.warning("Parcel %s not found — skipping NDVI sync.", parcel_id)
+                print(f"--- NDVI: Parcel {parcel_id} NOT FOUND — skipping ---")
                 return {"parcel_id": parcel_id_str, "records_saved": 0,
                         "cloudy_records": 0, "last_ndvi": None}
 
             # 2. Determine date window:
-            #    - First sync: last 90 days (seed historical data)
+            #    - First sync: last 90 days (seed historical data for LSTM)
             #    - Subsequent syncs: last 14 days (rolling window)
             ndvi_repo = NDVIRecordRepositoryImpl(session)
             existing = await ndvi_repo.get_latest_n(parcel_id, n=1)
             if existing:
                 start_date = date.today() - timedelta(days=14)
             else:
-                start_date = date.today() - timedelta(days=90)  # First sync: 3 months
+                start_date = date.today() - timedelta(days=90)
             end_date = date.today()
 
-            logger.debug(
-                "NDVI sync window for parcel %s: %s → %s",
-                parcel_id, start_date, end_date,
-            )
+            print(f"--- NDVI: Sync window {start_date} → {end_date} ---")
 
             # 3. Fetch from satellite client
             ndvi_points = await client.fetch_ndvi_timeseries(
@@ -126,8 +123,9 @@ async def _async_sync_ndvi(parcel_id_str: str) -> dict:
                 end_date=end_date,
             )
 
+            print(f"--- NDVI: Got {len(ndvi_points)} satellite passes ---")
+
             if not ndvi_points:
-                logger.warning("No NDVI data for parcel %s in window.", parcel_id)
                 return {"parcel_id": parcel_id_str, "records_saved": 0,
                         "cloudy_records": 0, "last_ndvi": None}
 
@@ -167,6 +165,11 @@ async def _async_sync_ndvi(parcel_id_str: str) -> dict:
 
             await session.commit()
 
+            print(
+                f"--- NDVI: Persisted {len(saved)} records ({cloudy_count} cloudy), "
+                f"last_ndvi={last_ndvi} ---"
+            )
+
             return {
                 "parcel_id": parcel_id_str,
                 "records_saved": len(saved),
@@ -174,6 +177,7 @@ async def _async_sync_ndvi(parcel_id_str: str) -> dict:
                 "last_ndvi": last_ndvi,
             }
 
-        except Exception:
+        except Exception as exc:
             await session.rollback()
+            print(f"--- NDVI DB ERROR: {exc} ---")
             raise

@@ -1,32 +1,32 @@
 """
 External HTTP Client: WeatherClient
 =====================================
-Fetches weather forecasts from the Open-Meteo API (free, no API key required).
-The mocked ``_mock_response`` method mirrors the exact structure of a real
-Open-Meteo hourly/daily response so it can be swapped transparently.
+Fetches weather data from the Open-Meteo API (free, no API key required).
 
-Design:
-    - ``AsyncClient`` is instantiated per call (not shared) to keep the client
-      stateless and safe for Celery worker processes.
-    - Retry logic: 3 attempts with exponential back-off (200ms, 400ms, 800ms).
-    - All API errors are wrapped in ``WeatherAPIError`` (domain exception).
+Two modes of operation:
+    1. **Forecast** (``fetch_forecast``): Uses the Forecast API to get the
+       next 7 days. Used by the weather alerts Celery task.
+    2. **Historical** (``fetch_historical_weather``): Uses the Archive API to
+       get past daily weather for a date range. Used by the LSTM training
+       notebook and the anomaly detection inference pipeline.
 
-Open-Meteo Variables Used (real call is commented out):
-    - temperature_2m_max, temperature_2m_min
-    - precipitation_sum
-    - windspeed_10m_max
-    - relativehumidity_2m_max
-    - uv_index_max
-    - weathercode
+Both modes return ``WeatherDataPoint`` objects for consistent downstream usage.
+
+Open-Meteo API Details:
+    - Forecast: ``https://api.open-meteo.com/v1/forecast``
+    - Archive:  ``https://archive-api.open-meteo.com/v1/archive``
+    - No API key required for non-commercial use.
+    - Rate limit: ~10,000 requests/day (very generous).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import List
+from typing import List, Optional
 
 import httpx
 
@@ -35,8 +35,9 @@ from app.core.exceptions import WeatherAPIError
 
 logger = logging.getLogger(__name__)
 
-_BASE_URL = "https://api.open-meteo.com/v1/forecast"
-_TIMEOUT = 10.0    # seconds
+_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+_TIMEOUT = 15.0    # seconds
 _MAX_RETRIES = 3
 
 
@@ -60,13 +61,26 @@ class WeatherDataPoint:
 
 
 class WeatherClient:
-    """HTTP client for fetching weather forecasts from Open-Meteo.
+    """HTTP client for fetching weather data from Open-Meteo.
 
     Usage::
 
         client = WeatherClient()
+
+        # Future forecast (next 7 days)
         forecasts = await client.fetch_forecast(lat=44.4, lon=26.1, days=7)
+
+        # Historical archive (past data for LSTM training)
+        history = await client.fetch_historical_weather(
+            lat=46.77, lon=21.32,
+            start_date=date(2024, 1, 1),
+            end_date=date(2025, 12, 31),
+        )
     """
+
+    # ==================================================================
+    # Forecast API (future weather — used by weather alerts task)
+    # ==================================================================
 
     async def fetch_forecast(
         self,
@@ -90,50 +104,193 @@ class WeatherClient:
         """
         logger.info("Fetching %d-day weather forecast for lat=%.4f lon=%.4f", days, lat, lon)
 
-        # --- Real API call (uncomment when Open-Meteo quota is configured) ---
-        # params = {
-        #     "latitude": lat, "longitude": lon,
-        #     "daily": [
-        #         "temperature_2m_max", "temperature_2m_min",
-        #         "precipitation_sum", "windspeed_10m_max",
-        #         "relativehumidity_2m_max", "uv_index_max", "weathercode",
-        #     ],
-        #     "timezone": "UTC",
-        #     "forecast_days": days,
-        # }
-        # async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        #     for attempt in range(1, _MAX_RETRIES + 1):
-        #         try:
-        #             resp = await client.get(_BASE_URL, params=params)
-        #             resp.raise_for_status()
-        #             return self._parse_response(resp.json(), days)
-        #         except httpx.HTTPError as exc:
-        #             if attempt == _MAX_RETRIES:
-        #                 raise WeatherAPIError(f"Open-Meteo request failed: {exc}") from exc
-        #             await asyncio.sleep(0.2 * (2 ** attempt))
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "daily": ",".join([
+                "temperature_2m_max", "temperature_2m_min",
+                "precipitation_sum", "wind_speed_10m_max",
+                "relative_humidity_2m_max", "uv_index_max", "weather_code",
+            ]),
+            "timezone": "UTC",
+            "forecast_days": days,
+        }
 
-        return self._mock_response(lat, lon, days)
+        return await self._fetch_daily(_FORECAST_URL, params, source="open-meteo")
 
-    # ------------------------------------------------------------------
-    # Parser (matches real Open-Meteo daily JSON structure)
-    # ------------------------------------------------------------------
+    # ==================================================================
+    # Archive API (historical weather — used by LSTM training & inference)
+    # ==================================================================
+
+    async def fetch_historical_weather(
+        self,
+        lat: float,
+        lon: float,
+        *,
+        start_date: date,
+        end_date: date,
+    ) -> List[WeatherDataPoint]:
+        """Fetch historical daily weather data from the Open-Meteo Archive API.
+
+        This is the primary data source for LSTM Autoencoder training.
+        Returns one ``WeatherDataPoint`` per calendar day in the range.
+
+        The Archive API supports dates from 1940 to ~5 days ago
+        (there's a ~5-day lag for archive ingestion).
+
+        Args:
+            lat:        Latitude in decimal degrees (WGS84).
+            lon:        Longitude in decimal degrees (WGS84).
+            start_date: First day of the range (inclusive).
+            end_date:   Last day of the range (inclusive).
+
+        Returns:
+            List of ``WeatherDataPoint`` objects, one per day, sorted chronologically.
+
+        Raises:
+            WeatherAPIError: If the API call fails.
+        """
+        # Clamp end_date to ~5 days ago (archive lag)
+        max_date = date.today() - timedelta(days=5)
+        if end_date > max_date:
+            end_date = max_date
+            logger.info("Clamped end_date to %s (archive lag)", end_date)
+
+        if start_date >= end_date:
+            logger.warning("start_date >= end_date after clamping — returning empty")
+            return []
+
+        logger.info(
+            "Fetching historical weather from %s to %s for lat=%.4f lon=%.4f",
+            start_date, end_date, lat, lon,
+        )
+
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "daily": ",".join([
+                "temperature_2m_max", "temperature_2m_min",
+                "precipitation_sum", "wind_speed_10m_max",
+                "relative_humidity_2m_mean", "weather_code",
+            ]),
+            "timezone": "UTC",
+        }
+
+        return await self._fetch_daily(
+            _ARCHIVE_URL, params, source="open-meteo-archive"
+        )
+
+    # ==================================================================
+    # Shared HTTP + parsing logic
+    # ==================================================================
+
+    async def _fetch_daily(
+        self,
+        url: str,
+        params: dict,
+        *,
+        source: str,
+    ) -> List[WeatherDataPoint]:
+        """Execute a daily weather API call with retries.
+
+        Works for both the Forecast and Archive endpoints since they
+        share the same response structure.
+        """
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            for attempt in range(1, _MAX_RETRIES + 1):
+                try:
+                    resp = await client.get(url, params=params)
+                    resp.raise_for_status()
+                    return self._parse_daily_response(resp.json(), source=source)
+                except httpx.HTTPStatusError as exc:
+                    logger.error(
+                        "Open-Meteo API error (attempt %d/%d): %s — %s",
+                        attempt, _MAX_RETRIES,
+                        exc.response.status_code,
+                        exc.response.text[:300],
+                    )
+                    if attempt == _MAX_RETRIES:
+                        raise WeatherAPIError(
+                            f"Open-Meteo request failed after {_MAX_RETRIES} attempts: "
+                            f"{exc.response.status_code}"
+                        ) from exc
+                    await asyncio.sleep(0.5 * (2 ** attempt))
+                except httpx.TimeoutException as exc:
+                    logger.error(
+                        "Open-Meteo timeout (attempt %d/%d)", attempt, _MAX_RETRIES,
+                    )
+                    if attempt == _MAX_RETRIES:
+                        raise WeatherAPIError(
+                            f"Open-Meteo request timed out after {_MAX_RETRIES} attempts"
+                        ) from exc
+                    await asyncio.sleep(0.5 * (2 ** attempt))
+                except Exception as exc:
+                    raise WeatherAPIError(f"Open-Meteo unexpected error: {exc}") from exc
+
+        return []  # unreachable
 
     @staticmethod
-    def _parse_response(data: dict, days: int) -> List[WeatherDataPoint]:
-        """Parse an Open-Meteo JSON response into ``WeatherDataPoint`` list."""
+    def _parse_daily_response(data: dict, *, source: str) -> List[WeatherDataPoint]:
+        """Parse an Open-Meteo daily JSON response into WeatherDataPoint list.
+
+        Handles both Forecast and Archive response formats (same structure).
+        Gracefully handles missing fields with sensible defaults.
+        """
         daily = data.get("daily", {})
-        points = []
-        for i in range(min(days, len(daily.get("time", [])))):
+        times = daily.get("time", [])
+
+        if not times:
+            logger.warning("Open-Meteo response has no daily time series")
+            return []
+
+        # Extract arrays with fallbacks for missing fields
+        temp_max = daily.get("temperature_2m_max", [])
+        temp_min = daily.get("temperature_2m_min", [])
+        precip = daily.get("precipitation_sum", [])
+        wind = daily.get("wind_speed_10m_max", [])
+        # Accept both field name variants (forecast vs archive may differ)
+        humidity = (
+            daily.get("relative_humidity_2m_max", [])
+            or daily.get("relative_humidity_2m_mean", [])
+        )
+        uv = daily.get("uv_index_max", [])
+        weather_codes = daily.get("weather_code", [])
+
+        points: List[WeatherDataPoint] = []
+
+        for i, time_str in enumerate(times):
+            try:
+                fc_date = date.fromisoformat(time_str)
+            except (ValueError, TypeError):
+                continue
+
+            # Safe index access with defaults
+            t_max = temp_max[i] if i < len(temp_max) and temp_max[i] is not None else 20.0
+            t_min = temp_min[i] if i < len(temp_min) and temp_min[i] is not None else 10.0
+            hum = humidity[i] if i < len(humidity) and humidity[i] is not None else 50.0
+            prec = precip[i] if i < len(precip) and precip[i] is not None else 0.0
+            wnd = wind[i] if i < len(wind) and wind[i] is not None else 0.0
+            uv_val = uv[i] if i < len(uv) else None
+            wc = weather_codes[i] if i < len(weather_codes) else None
+
             points.append(WeatherDataPoint(
-                forecast_date=date.fromisoformat(daily["time"][i]),
-                temp_max_c=daily["temperature_2m_max"][i],
-                temp_min_c=daily["temperature_2m_min"][i],
-                humidity_pct=daily["relativehumidity_2m_max"][i],
-                precipitation_mm=daily["precipitation_sum"][i] or 0.0,
-                wind_speed_kmh=daily["windspeed_10m_max"][i] or 0.0,
-                uv_index=daily.get("uv_index_max", [None])[i],
-                weather_code=daily.get("weathercode", [None])[i],
+                forecast_date=fc_date,
+                temp_max_c=round(t_max, 1),
+                temp_min_c=round(t_min, 1),
+                humidity_pct=round(hum, 1),
+                precipitation_mm=round(prec, 1),
+                wind_speed_kmh=round(wnd, 1),
+                uv_index=round(uv_val, 1) if uv_val is not None else None,
+                weather_code=int(wc) if wc is not None else None,
+                source=source,
             ))
+
+        logger.info(
+            "Parsed %d daily weather records from Open-Meteo (%s)",
+            len(points), source,
+        )
         return points
 
     # ------------------------------------------------------------------

@@ -35,7 +35,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
-    op.create_index('uix_users_email_lower', 'users', [sa.text("lower('email')")], unique=True)
+    op.create_index('uix_users_email_lower', 'users', [sa.text("lower(email)")], unique=True)
     op.create_table('parcels',
     sa.Column('id', sa.UUID(), nullable=False, comment='Globally unique identifier for the parcel.'),
     sa.Column('owner_id', sa.UUID(), nullable=False, comment='FK → users.id. Cascaded on user deletion.'),

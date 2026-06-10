@@ -38,13 +38,28 @@ flower==2.0.1                      # Celery monitoring UI
 torch==2.5.1                       # PyTorch (LSTM Autoencoder)
 numpy==2.2.1
 scikit-learn==1.6.1                # Preprocessing, metrics
+pandas>=2.2.0                      # DataFrames for time-series preprocessing
+
+# --- Satellite & Weather Data ---
+sentinelhub>=3.10.0                # Sentinel Hub Python SDK (Copernicus CDSE)
+openmeteo-requests>=1.2.0          # Open-Meteo historical weather API client
+requests-cache>=1.2.0              # HTTP caching for Open-Meteo
+
+# --- Experiment Notebook ---
+matplotlib>=3.9.0                  # Training curves, ROC plots
+seaborn>=0.13.0                    # Statistical visualizations
+jupyter>=1.0.0                     # Notebook support
+python-dotenv>=1.0.0               # Load .env in notebook
+
 
 # --- LangChain / RAG ---
 langchain==0.3.15
 langchain-openai==0.3.1
 langchain-community==0.3.15
+langchain-chroma>=0.1.0            # LangChain-native ChromaDB integration (0.6.x)
 chromadb==0.6.3                    # Local vector store
 openai==1.59.9                     # OpenAI API client
+pypdf>=4.0.0                       # PDF parsing for knowledge base ingestion
 
 # --- HTTP Clients ---
 httpx==0.28.1                      # Async HTTP (weather API, external calls)
@@ -62,3 +77,8 @@ factory-boy==3.3.1
 pydantic[email]>=2.5.0
 passlib[bcrypt]>=1.7.4
 python-multipart>=0.0.6
+
+pandas
+numpy
+matplotlib
+seaborn

@@ -70,6 +70,7 @@ class ParcelService:
         Raises:
             InvalidGeometryError: If GeoJSON cannot be parsed or is invalid.
         """
+        print("\n!!! DOCKER RULEAZA CODUL CORECT - METODA CREATE_PARCEL A PORNIT !!!\n", flush=True)
         logger.info(
             "Creating parcel name=%r for owner id=%s", payload.name, owner.id
         )
@@ -109,6 +110,7 @@ class ParcelService:
         Args:
             parcel_id_str: UUID string of the parcel to sync.
         """
+        print(f"\n!!! INCERCAM SA TRIMITEM TASK-UL CELERY PENTRU: {parcel_id_str} !!!\n", flush=True)
         try:
             from app.application.tasks.sync_ndvi_tasks import sync_ndvi_for_parcel
             from app.application.tasks.sync_weather_tasks import sync_weather_for_parcel
@@ -120,8 +122,10 @@ class ParcelService:
                 "Background tasks enqueued for parcel %s — ndvi_task=%s weather_task=%s",
                 parcel_id_str, ndvi_result.id, weather_result.id,
             )
+            print("\n!!! AM TRIMIS CU SUCCES IN REDIS !!!\n", flush=True)
         except Exception as exc:
             # Graceful degradation: parcel is saved; sync is best-effort.
+            print(f"\n!!! EROARE LA TRIMITEREA IN REDIS: {exc} !!!\n", flush=True)
             logger.error(
                 "Failed to enqueue background sync tasks for parcel %s: %s",
                 parcel_id_str, exc,

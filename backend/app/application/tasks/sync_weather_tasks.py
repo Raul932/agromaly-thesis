@@ -43,30 +43,29 @@ logger = get_task_logger(__name__)
     bind=True,
     name="app.application.tasks.sync_weather_tasks.sync_weather_for_parcel",
     max_retries=3,
-    default_retry_delay=60,          # seconds (base; doubled each retry)
+    default_retry_delay=60,
     autoretry_for=(WeatherAPIError,),
     retry_backoff=True,
-    retry_backoff_max=300,           # cap at 5 minutes
+    retry_backoff_max=300,
     acks_late=True,
 )
 def sync_weather_for_parcel(self, parcel_id_str: str) -> dict:
-    """Celery task: fetch 7-day weather forecast and persist to DB.
-
-    Args:
-        parcel_id_str: UUID of the parcel as a string (JSON-serializable).
-
-    Returns:
-        Dict with ``{"parcel_id": ..., "days_saved": N}`` for the result backend.
-    """
+    """Celery task: fetch 7-day weather forecast and persist to DB."""
+    print(f"--- CELERY WEATHER TASK RECEIVED --- parcel_id={parcel_id_str}")
     logger.info("sync_weather_for_parcel started: parcel_id=%s", parcel_id_str)
     try:
         result = asyncio.run(_async_sync_weather(parcel_id_str))
+        print(
+            f"--- CELERY WEATHER TASK SUCCESS --- parcel_id={parcel_id_str} "
+            f"days_saved={result['days_saved']}"
+        )
         logger.info(
             "sync_weather_for_parcel done: parcel_id=%s days_saved=%d",
             parcel_id_str, result["days_saved"],
         )
         return result
     except Exception as exc:
+        print(f"--- CELERY WEATHER TASK FAILED --- parcel_id={parcel_id_str} error={exc}")
         logger.error("sync_weather_for_parcel failed: %s", exc, exc_info=True)
         raise
 
@@ -76,12 +75,8 @@ def sync_weather_for_parcel(self, parcel_id_str: str) -> dict:
 # ---------------------------------------------------------------------------
 
 async def _async_sync_weather(parcel_id_str: str) -> dict:
-    """Async implementation of the weather sync use case.
-
-    Separated from the synchronous task wrapper to allow direct
-    ``await`` calls in tests without running a real Celery broker.
-    """
-    from app.infrastructure.db.models import ParcelORM  # trigger mapper registration
+    """Async implementation of the weather sync use case."""
+    import app.infrastructure.db.models  # noqa: F401 — trigger mapper registration
     from app.infrastructure.db.session import AsyncSessionLocal
     from app.infrastructure.external.weather_client import WeatherClient
     from app.infrastructure.repositories.parcel_repository_impl import ParcelRepositoryImpl
@@ -97,18 +92,18 @@ async def _async_sync_weather(parcel_id_str: str) -> dict:
             parcel_repo = ParcelRepositoryImpl(session)
             parcel = await parcel_repo.get_by_id(parcel_id)
             if parcel is None:
-                logger.warning("Parcel %s not found — skipping weather sync.", parcel_id)
+                print(f"--- WEATHER: Parcel {parcel_id} NOT FOUND — skipping ---")
                 return {"parcel_id": parcel_id_str, "days_saved": 0}
 
             # 2. Compute centroid from parcel WKT
             lat, lon = _centroid_from_wkt(parcel.geometry_wkt)
-            logger.debug("Centroid for parcel %s: lat=%.4f lon=%.4f", parcel_id, lat, lon)
+            print(f"--- WEATHER: Centroid lat={lat:.4f} lon={lon:.4f} ---")
 
             # 3. Fetch 7-day forecast
             weather_points = await client.fetch_forecast(lat, lon, days=7)
+            print(f"--- WEATHER: Got {len(weather_points)} forecast days ---")
 
             if not weather_points:
-                logger.warning("No weather data returned for parcel %s.", parcel_id)
                 return {"parcel_id": parcel_id_str, "days_saved": 0}
 
             # 4. Map to domain entities
@@ -134,10 +129,12 @@ async def _async_sync_weather(parcel_id_str: str) -> dict:
             saved = await forecast_repo.save_batch(forecasts)
             await session.commit()
 
+            print(f"--- WEATHER: Persisted {len(saved)} forecasts to DB ---")
             return {"parcel_id": parcel_id_str, "days_saved": len(saved)}
 
-        except Exception:
+        except Exception as exc:
             await session.rollback()
+            print(f"--- WEATHER DB ERROR: {exc} ---")
             raise
 
 
@@ -146,14 +143,7 @@ async def _async_sync_weather(parcel_id_str: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def _centroid_from_wkt(geometry_wkt: str) -> tuple[float, float]:
-    """Extract (latitude, longitude) centroid from a WKT geometry string.
-
-    Args:
-        geometry_wkt: WKT geometry string (MULTIPOLYGON or POLYGON).
-
-    Returns:
-        Tuple of (latitude, longitude) in decimal degrees.
-    """
+    """Extract (latitude, longitude) centroid from a WKT geometry string."""
     import shapely.wkt
     geom = shapely.wkt.loads(geometry_wkt)
     centroid = geom.centroid

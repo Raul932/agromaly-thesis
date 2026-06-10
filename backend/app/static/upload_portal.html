@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agromaly — Import Parcel Boundaries</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green:   #52B788;
+      --green-d: #2D6A4F;
+      --navy:    #0D1B2A;
+      --navy2:   #1B2F42;
+      --panel:   rgba(255,255,255,0.06);
+      --border:  rgba(255,255,255,0.12);
+      --text:    rgba(255,255,255,0.85);
+      --muted:   rgba(255,255,255,0.45);
+      --error:   #E76F51;
+      --warn:    #E9C46A;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, var(--navy) 0%, #1B4332 55%, var(--green-d) 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Layout ── */
+    .page {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px 60px;
+      gap: 28px;
+    }
+
+    /* ── Brand Header ── */
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brand-icon {
+      width: 52px; height: 52px;
+      background: rgba(82,183,136,0.15);
+      border: 1px solid rgba(82,183,136,0.35);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px;
+    }
+    .brand-text h1 {
+      font-size: 22px; font-weight: 700; letter-spacing: 3px; color: #fff;
+    }
+    .brand-text p {
+      font-size: 12px; color: var(--muted); letter-spacing: 1px; margin-top: 2px;
+    }
+
+    /* ── Card ── */
+    .card {
+      width: 100%; max-width: 640px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px;
+    }
+    .card-title {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 15px; font-weight: 600; margin-bottom: 18px;
+    }
+    .card-title .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green); flex-shrink: 0;
+    }
+
+    /* ── Drop Zone ── */
+    #drop-zone {
+      border: 2px dashed rgba(82,183,136,0.35);
+      border-radius: 16px;
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    #drop-zone.drag-over {
+      border-color: var(--green);
+      background: rgba(82,183,136,0.08);
+    }
+    #drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    }
+    .drop-icon {
+      font-size: 48px; margin-bottom: 14px; display: block;
+      filter: drop-shadow(0 0 12px rgba(82,183,136,0.5));
+    }
+    .drop-primary {
+      font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 6px;
+    }
+    .drop-secondary {
+      font-size: 13px; color: var(--muted);
+    }
+    .drop-badge {
+      display: inline-block; margin-top: 14px;
+      padding: 4px 12px; border-radius: 20px;
+      background: rgba(82,183,136,0.15);
+      border: 1px solid rgba(82,183,136,0.3);
+      font-size: 12px; color: var(--green); font-weight: 600;
+    }
+
+    /* ── File List ── */
+    #file-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .file-item {
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 12px 16px;
+      animation: slide-in 0.25s ease;
+    }
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateY(-8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .file-icon { font-size: 22px; flex-shrink: 0; }
+    .file-info { flex: 1; min-width: 0; }
+    .file-name { font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .file-status { font-size: 20px; flex-shrink: 0; }
+
+    /* ── Progress bar ── */
+    .progress-bar-wrap {
+      height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-top: 8px; overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%; background: var(--green); border-radius: 2px;
+      width: 0%; transition: width 0.3s;
+    }
+
+    /* ── Upload button ── */
+    #upload-btn {
+      width: 100%; padding: 16px;
+      background: var(--green);
+      color: #fff; font-size: 15px; font-weight: 700;
+      border: none; border-radius: 14px; cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      letter-spacing: 0.5px;
+    }
+    #upload-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #upload-btn:not(:disabled):hover { opacity: 0.9; transform: translateY(-1px); }
+    #upload-btn:not(:disabled):active { transform: translateY(0); }
+
+    /* ── Success state ── */
+    #success-card {
+      display: none;
+      text-align: center;
+      padding: 40px 28px;
+    }
+    .success-icon { font-size: 64px; display: block; margin-bottom: 16px; }
+    .success-title { font-size: 20px; font-weight: 700; color: var(--green); margin-bottom: 8px; }
+    .success-sub   { font-size: 14px; color: var(--muted); line-height: 1.6; }
+    .phone-hint {
+      margin-top: 20px; padding: 14px 18px;
+      background: rgba(82,183,136,0.1);
+      border: 1px solid rgba(82,183,136,0.25);
+      border-radius: 12px;
+      font-size: 13px; color: var(--text);
+    }
+
+    /* ── Info strip ── */
+    .info-strip {
+      width: 100%; max-width: 640px;
+      display: flex; gap: 12px; flex-wrap: wrap;
+    }
+    .info-chip {
+      flex: 1; min-width: 160px;
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px; padding: 12px 16px;
+    }
+    .info-chip .chip-icon { font-size: 20px; }
+    .info-chip .chip-text { font-size: 12px; color: var(--muted); line-height: 1.4; }
+    .info-chip .chip-text strong { color: var(--text); display: block; }
+
+    /* ── Error banner ── */
+    .error-banner {
+      display: none; padding: 12px 16px; border-radius: 10px;
+      background: rgba(231,111,81,0.12);
+      border: 1px solid rgba(231,111,81,0.3);
+      font-size: 13px; color: var(--error);
+    }
+    .error-banner.visible { display: block; }
+
+    /* ── Footer ── */
+    footer { font-size: 11px; color: var(--muted); text-align: center; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Brand -->
+  <div class="brand">
+    <div class="brand-icon">🌿</div>
+    <div class="brand-text">
+      <h1>AGROMALY</h1>
+      <p>AI-POWERED CROP MONITORING</p>
+    </div>
+  </div>
+
+  <!-- Main upload card -->
+  <div class="card" id="upload-card">
+    <div class="card-title">
+      <div class="dot"></div>
+      Import APIA Parcel Boundaries
+    </div>
+
+    <!-- Drop zone -->
+    <div id="drop-zone">
+      <input type="file" id="file-input" accept=".gpx" multiple />
+      <span class="drop-icon">📂</span>
+      <div class="drop-primary">Drag &amp; drop your .gpx files here</div>
+      <div class="drop-secondary">or click to browse — select multiple files at once</div>
+      <span class="drop-badge">.GPX — APIA Export Format</span>
+    </div>
+
+    <div id="error-banner" class="error-banner" style="margin-top:14px;"></div>
+
+    <!-- File list (populated dynamically) -->
+    <div id="file-list" style="margin-top: 16px;"></div>
+
+    <!-- Upload button -->
+    <div style="margin-top: 20px;">
+      <button id="upload-btn" disabled>
+        Select files to upload ↑
+      </button>
+    </div>
+  </div>
+
+  <!-- Success card (shown after upload) -->
+  <div class="card" id="success-card">
+    <span class="success-icon">✅</span>
+    <div class="success-title">Files received!</div>
+    <div class="success-sub">
+      Your parcel boundaries have been parsed and sent to the Agromaly app.
+    </div>
+    <div class="phone-hint">
+      📱 <strong>Check your phone</strong> — a preview of your parcels is waiting for confirmation in the app.
+    </div>
+  </div>
+
+  <!-- Info chips -->
+  <div class="info-strip">
+    <div class="info-chip">
+      <span class="chip-icon">🛡️</span>
+      <div class="chip-text">
+        <strong>Session-secured</strong>
+        This link expires in 15 minutes and is single-use.
+      </div>
+    </div>
+    <div class="info-chip">
+      <span class="chip-icon">📍</span>
+      <div class="chip-text">
+        <strong>APIA compatible</strong>
+        Reads name, crop, area &amp; year from official exports.
+      </div>
+    </div>
+    <div class="info-chip">
+      <span class="chip-icon">⚡</span>
+      <div class="chip-text">
+        <strong>Instant sync</strong>
+        Parcels appear on your phone map immediately after confirm.
+      </div>
+    </div>
+  </div>
+
+  <footer>© 2026 Agromaly — Bachelor's Thesis &nbsp;·&nbsp; Secure cross-device upload</footer>
+</div>
+
+<script>
+  // ── Grab the upload token from the URL path: /upload/{token} ──
+  const token = window.location.pathname.split('/').filter(Boolean).pop();
+  const API_BASE = window.location.origin + '/api/v1';
+
+  const dropZone   = document.getElementById('drop-zone');
+  const fileInput  = document.getElementById('file-input');
+  const fileList   = document.getElementById('file-list');
+  const uploadBtn  = document.getElementById('upload-btn');
+  const uploadCard = document.getElementById('upload-card');
+  const successCard = document.getElementById('success-card');
+  const errorBanner = document.getElementById('error-banner');
+
+  let selectedFiles = [];
+
+  // ── Drag & drop events ──
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    addFiles([...e.dataTransfer.files]);
+  });
+  fileInput.addEventListener('change', () => addFiles([...fileInput.files]));
+
+  function addFiles(newFiles) {
+    const gpxFiles = newFiles.filter(f => f.name.toLowerCase().endsWith('.gpx'));
+    if (gpxFiles.length !== newFiles.length) {
+      showError(`${newFiles.length - gpxFiles.length} non-GPX file(s) were ignored.`);
+    }
+    // Deduplicate by name
+    gpxFiles.forEach(f => {
+      if (!selectedFiles.find(x => x.name === f.name)) selectedFiles.push(f);
+    });
+    renderFileList();
+  }
+
+  function renderFileList() {
+    fileList.innerHTML = '';
+    selectedFiles.forEach((f, i) => {
+      const item = document.createElement('div');
+      item.className = 'file-item';
+      item.id = `file-${i}`;
+      item.innerHTML = `
+        <span class="file-icon">🗺️</span>
+        <div class="file-info">
+          <div class="file-name">${f.name}</div>
+          <div class="file-meta">${(f.size / 1024).toFixed(1)} KB · GPX parcel boundary</div>
+          <div class="progress-bar-wrap" id="prog-wrap-${i}" style="display:none">
+            <div class="progress-bar" id="prog-${i}"></div>
+          </div>
+        </div>
+        <span class="file-status" id="status-${i}">⬜</span>
+      `;
+      fileList.appendChild(item);
+    });
+
+    uploadBtn.disabled = selectedFiles.length === 0;
+    uploadBtn.textContent = selectedFiles.length > 0
+      ? `Upload ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''} to Agromaly ↑`
+      : 'Select files to upload ↑';
+  }
+
+  function showError(msg) {
+    errorBanner.textContent = '⚠️ ' + msg;
+    errorBanner.classList.add('visible');
+    setTimeout(() => errorBanner.classList.remove('visible'), 5000);
+  }
+
+  // ── Upload ──
+  uploadBtn.addEventListener('click', async () => {
+    if (selectedFiles.length === 0) return;
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Uploading…';
+    clearError();
+
+    const formData = new FormData();
+    selectedFiles.forEach(f => formData.append('files', f, f.name));
+
+    // Show progress bars
+    selectedFiles.forEach((_, i) => {
+      document.getElementById(`prog-wrap-${i}`).style.display = 'block';
+      document.getElementById(`status-${i}`).textContent = '⏳';
+    });
+
+    // Animate progress bars (fake — XHR doesn't give per-file progress)
+    let fakeProgress = 0;
+    const progInterval = setInterval(() => {
+      fakeProgress = Math.min(fakeProgress + 8, 85);
+      selectedFiles.forEach((_, i) => {
+        document.getElementById(`prog-${i}`).style.width = fakeProgress + '%';
+      });
+    }, 100);
+
+    try {
+      const resp = await fetch(`${API_BASE}/upload/${token}/files`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      clearInterval(progInterval);
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: 'Upload failed' }));
+        throw new Error(err.detail || `HTTP ${resp.status}`);
+      }
+
+      // Complete all progress bars
+      selectedFiles.forEach((_, i) => {
+        document.getElementById(`prog-${i}`).style.width = '100%';
+        document.getElementById(`status-${i}`).textContent = '✅';
+      });
+
+      setTimeout(() => {
+        uploadCard.style.display = 'none';
+        successCard.style.display = 'block';
+      }, 800);
+
+    } catch (err) {
+      clearInterval(progInterval);
+      selectedFiles.forEach((_, i) => {
+        document.getElementById(`prog-${i}`).style.width = '0%';
+        document.getElementById(`status-${i}`).textContent = '❌';
+      });
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = `Retry upload (${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}) ↑`;
+      showError(err.message || 'Upload failed. Please try again.');
+    }
+  });
+
+  function clearError() {
+    errorBanner.classList.remove('visible');
+    errorBanner.textContent = '';
+  }
+</script>
+</body>
+</html>
