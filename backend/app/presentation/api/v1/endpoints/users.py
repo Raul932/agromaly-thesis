@@ -25,10 +25,10 @@ from app.core.exceptions import (
     PermissionDeniedError,
     UserNotFoundError,
 )
-from app.core.security import get_current_user
+from app.core.security import decode_refresh_token, get_current_user
 from app.domain.entities.user import User
 from app.presentation.api.v1.dependencies import get_user_service
-from app.presentation.schemas.user import Token, UserCreate, UserLogin, UserResponse
+from app.presentation.schemas.user import RefreshTokenRequest, Token, UserCreate, UserLogin, UserResponse
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -139,6 +139,30 @@ async def login(
         payload = UserLogin(email=form.username, password=form.password)
         return await service.authenticate(payload)
     except PermissionDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=exc.message,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+@router.post(
+    "/refresh",
+    response_model=Token,
+    summary="Refresh JWT access token",
+    responses={
+        401: {"description": "Invalid or expired refresh token"},
+    },
+)
+async def refresh_token(
+    body: RefreshTokenRequest,
+    service: UserService = Depends(get_user_service),
+) -> Token:
+    """Exchange a valid refresh token for a new access + refresh token pair."""
+    payload = decode_refresh_token(body.refresh_token)
+    try:
+        return await service.refresh(payload["sub"])
+    except (UserNotFoundError, PermissionDeniedError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=exc.message,

@@ -51,7 +51,7 @@ async def _async_run_anomaly_detection_for_all() -> dict:
     from app.infrastructure.repositories.ndvi_record_repository_impl import NDVIRecordRepositoryImpl
     from app.infrastructure.repositories.alert_repository_impl import AlertRepositoryImpl
     from app.infrastructure.repositories.user_repository_impl import UserRepositoryImpl
-    from app.application.services.analysis_service import _compute_anomaly_score
+    from app.application.services.analysis_service import _compute_anomaly_score, fetch_weather_summary
     from app.application.services.rag_service import get_rag_service
     from app.domain.entities.alert import Alert, AlertType, AlertSeverity
     from app.domain.entities.parcel import ParcelStatus
@@ -88,7 +88,8 @@ async def _async_run_anomaly_detection_for_all() -> dict:
 
             analyzed += 1
 
-            result_dict = _compute_anomaly_score(reliable, cloud_gap_ratio)
+            weather_summary = await fetch_weather_summary(parcel)
+            result_dict = _compute_anomaly_score(reliable, cloud_gap_ratio, weather_summary)
 
             if result_dict["status"] == "ANOMALY_DETECTED":
                 anomalies += 1
@@ -98,7 +99,6 @@ async def _async_run_anomaly_detection_for_all() -> dict:
                 try:
                     rag = get_rag_service()
                     if rag is not None:
-                        weather_summary = await _fetch_weather_summary(parcel)
                         crop = parcel.crop_type
                         parcel_context = {
                             "name": parcel.name,
@@ -129,7 +129,7 @@ async def _async_run_anomaly_detection_for_all() -> dict:
                         if result_dict["anomaly_score"] >= 0.8
                         else AlertSeverity.MEDIUM
                     ),
-                    title=f"Anomaly Detected on {parcel.name}",
+                    title=f"Anomalie detectată pe {parcel.name}",
                     description=result_dict["recommendation"],
                     ai_recommendation=ai_rec,
                     triggered_value=result_dict["mse_score"],
@@ -143,39 +143,3 @@ async def _async_run_anomaly_detection_for_all() -> dict:
         "parcels_analyzed": analyzed,
         "anomalies_detected": anomalies,
     }
-
-
-async def _fetch_weather_summary(parcel) -> dict:
-    """Fetch 30-day average weather for the parcel centroid.
-
-    Returns an empty dict on any failure so the caller can proceed.
-    """
-    try:
-        from datetime import date, timedelta
-        from shapely import wkt
-        from app.infrastructure.external.weather_client import WeatherClient
-
-        geom = wkt.loads(parcel.geometry_wkt)
-        centroid = geom.centroid
-        lat, lon = centroid.y, centroid.x
-
-        client = WeatherClient()
-        end = date.today() - timedelta(days=1)
-        start = end - timedelta(days=29)
-        forecasts = await client.fetch_historical_weather(lat, lon, start, end)
-
-        if not forecasts:
-            return {}
-
-        temps = [f.temperature_max for f in forecasts if f.temperature_max is not None]
-        precips = [f.precipitation_sum for f in forecasts if f.precipitation_sum is not None]
-
-        return {
-            "period": f"{start} to {end}",
-            "avg_temp_max_C": round(sum(temps) / len(temps), 1) if temps else "N/A",
-            "total_precip_mm": round(sum(precips), 1) if precips else "N/A",
-            "days_analyzed": len(forecasts),
-        }
-    except Exception as exc:
-        logger.debug("Weather fetch failed for anomaly task: %s", exc)
-        return {}

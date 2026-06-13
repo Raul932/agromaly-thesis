@@ -41,6 +41,7 @@ scikit-learn==1.6.1                # Preprocessing, metrics
 pandas>=2.2.0                      # DataFrames for time-series preprocessing
 
 # --- Satellite & Weather Data ---
+Pillow>=10.0.0                     # PNG image generation for NDVI spatial heatmap
 sentinelhub>=3.10.0                # Sentinel Hub Python SDK (Copernicus CDSE)
 openmeteo-requests>=1.2.0          # Open-Meteo historical weather API client
 requests-cache>=1.2.0              # HTTP caching for Open-Meteo

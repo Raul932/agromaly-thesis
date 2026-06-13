@@ -19,9 +19,9 @@ class ChatService {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       return data['answer'] as String;
     } else if (response.statusCode == 503) {
-      throw Exception('AI service is not available. Please try again later.');
+      throw Exception('Serviciul AI nu este disponibil. Încearcă din nou mai târziu.');
     } else {
-      throw Exception('Failed to get answer (${response.statusCode})');
+      throw Exception('Nu am putut obține răspunsul (${response.statusCode})');
     }
   }
 
@@ -43,11 +43,11 @@ class ChatService {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       return data['answer'] as String;
     } else if (response.statusCode == 503) {
-      throw Exception('AI service is not available. Please try again later.');
+      throw Exception('Serviciul AI nu este disponibil. Încearcă din nou mai târziu.');
     } else if (response.statusCode == 403) {
-      throw Exception('You do not have access to this parcel.');
+      throw Exception('Nu ai acces la această parcelă.');
     } else {
-      throw Exception('Failed to get parcel answer (${response.statusCode})');
+      throw Exception('Nu am putut obține răspunsul (${response.statusCode})');
     }
   }
 }

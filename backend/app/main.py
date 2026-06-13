@@ -89,7 +89,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             import sys, os
             sys.path.insert(0, str(Path(__file__).parent.parent.parent))
             from scripts.ingest_knowledge_base import ingest
-            kb_dir = Path(__file__).parent.parent.parent / "data" / "knowledge_base"
+            kb_dir = Path(__file__).parent.parent / "data" / "knowledge_base"
             n = ingest(
                 chroma_dir=settings.CHROMA_PERSIST_DIRECTORY,
                 pdf_dir=str(kb_dir),
@@ -214,7 +214,9 @@ def _register_exception_handlers(app: FastAPI) -> None:
         logger.error(
             "Unhandled exception",
             exc_type=type(exc).__name__,
+            error=str(exc),
             path=request.url.path,
+            exc_info=True,
         )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

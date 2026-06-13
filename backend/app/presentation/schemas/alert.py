@@ -33,3 +33,10 @@ class UnreadCountResponse(BaseModel):
     """Badge count response."""
 
     count: int
+
+
+class ScanResultResponse(BaseModel):
+    """Result of a manual scan-all anomaly detection run."""
+
+    parcels_analyzed: int
+    anomalies_found: int

@@ -167,7 +167,7 @@ class ParcelORM(Base):
         SAEnum(CropType, name="croptype", create_constraint=True, validate_strings=True),
         nullable=False,
         default=CropType.UNKNOWN,
-        server_default=CropType.UNKNOWN.value,
+        server_default="UNKNOWN",
         comment="Current crop planted on this parcel.",
     )
 
@@ -178,7 +178,7 @@ class ParcelORM(Base):
         SAEnum(ParcelStatus, name="parcelstatus", create_constraint=True, validate_strings=True),
         nullable=False,
         default=ParcelStatus.PENDING,
-        server_default=ParcelStatus.PENDING.value,
+        server_default="PENDING",
         comment="Lifecycle status of the parcel.",
     )
 
@@ -213,6 +213,12 @@ class ParcelORM(Base):
         DateTime(timezone=True),
         nullable=True,
         comment="UTC timestamp when last_ndvi was measured.",
+    )
+
+    last_anomaly_status: Mapped[Optional[str]] = mapped_column(
+        String(30),
+        nullable=True,
+        comment="Most recent anomaly detection result (HEALTHY/ANOMALY_DETECTED/INSUFFICIENT_DATA).",
     )
 
     # ------------------------------------------------------------------
@@ -275,6 +281,7 @@ class ParcelORM(Base):
             updated_at=self.updated_at,
             last_ndvi=self.last_ndvi,
             last_ndvi_at=self.last_ndvi_at,
+            last_anomaly_status=self.last_anomaly_status,
         )
 
     # ------------------------------------------------------------------
@@ -307,6 +314,7 @@ class ParcelORM(Base):
             updated_at=parcel.updated_at,
             last_ndvi=parcel.last_ndvi,
             last_ndvi_at=parcel.last_ndvi_at,
+            last_anomaly_status=parcel.last_anomaly_status,
         )
 
     def __repr__(self) -> str:

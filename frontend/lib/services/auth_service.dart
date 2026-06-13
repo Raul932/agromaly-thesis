@@ -26,6 +26,7 @@ class AuthService {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final token = Token.fromJson(data);
       await _saveToken(token.accessToken);
+      await _saveRefreshToken(token.refreshToken);
       await _saveEmail(email);
       return token;
     } else if (response.statusCode == 401) {
@@ -94,6 +95,7 @@ class AuthService {
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(kTokenKey);
+    await prefs.remove(kRefreshTokenKey);
     await prefs.remove(_kEmailKey);
   }
 
@@ -114,6 +116,12 @@ class AuthService {
   Future<void> _saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(kTokenKey, token);
+  }
+
+  /// Persist the refresh token.
+  Future<void> _saveRefreshToken(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(kRefreshTokenKey, token);
   }
 
   /// Persist the user email for sidebar display.

@@ -15,10 +15,15 @@ void main() {
     DeviceOrientation.portraitDown,
   ]);
 
-  // Dark status bar
+  // Edge-to-edge so the app draws behind the status bar and nav bar,
+  // and Flutter correctly reports their heights via MediaQuery.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarContrastEnforced: false,
+    systemNavigationBarIconBrightness: Brightness.light,
   ));
 
   runApp(const AgromalyApp());

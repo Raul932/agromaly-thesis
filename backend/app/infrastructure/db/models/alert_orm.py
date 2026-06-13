@@ -38,6 +38,21 @@ if TYPE_CHECKING:
     from app.infrastructure.db.models.parcel_orm import ParcelORM
 
 
+def _coerce_enum(enum_cls, value):
+    """Coerce a DB value into an enum member.
+
+    SQLAlchemy normally hands back an enum member already, but this is tolerant
+    of a raw value (``"anomaly"``) or a raw name (``"ANOMALY"``) slipping through,
+    so ``to_domain`` never raises a ValueError that would surface as an opaque 500.
+    """
+    if isinstance(value, enum_cls):
+        return value
+    try:
+        return enum_cls(value)      # lookup by value, e.g. "anomaly"
+    except ValueError:
+        return enum_cls[value]      # lookup by name, e.g. "ANOMALY"
+
+
 class AlertORM(Base):
     """ORM representation of the ``alerts`` table."""
 
@@ -128,8 +143,8 @@ class AlertORM(Base):
         return Alert(
             id=self.id,
             parcel_id=self.parcel_id,
-            alert_type=AlertType(self.alert_type),
-            severity=AlertSeverity(self.severity),
+            alert_type=_coerce_enum(AlertType, self.alert_type),
+            severity=_coerce_enum(AlertSeverity, self.severity),
             title=self.title,
             description=self.description,
             ai_recommendation=self.ai_recommendation,

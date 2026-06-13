@@ -85,7 +85,18 @@ class UserService:
             is_superuser=False,
         )
 
-        saved = await self._user_repo.save(new_user)
+        try:
+            saved = await self._user_repo.save(new_user)
+        except Exception as exc:
+            # Guard against a race condition: exists_by_email returned False but
+            # a concurrent request committed the same email before our INSERT.
+            # Only raise EmailAlreadyRegisteredError for genuine email conflicts
+            # (repository uses "email_already_registered" sentinel to signal this).
+            if str(exc) == "email_already_registered":
+                raise EmailAlreadyRegisteredError(
+                    f"Email '{payload.email}' is already registered."
+                ) from exc
+            raise
         logger.info("User registered successfully: id=%s email=%s", saved.id, saved.email)
         return saved
 
@@ -116,8 +127,13 @@ class UserService:
 
         user = await self._user_repo.get_by_email(payload.email)
         if user is None:
-            # Constant-time: still run password verify to prevent timing attacks
-            verify_password(payload.password, "$argon2id$v=19$m=65536,t=3,p=4$placeholder")
+            # Constant-time dummy verify to prevent timing-based user enumeration.
+            # The placeholder hash is intentionally invalid; passlib may raise
+            # ValueError — catch it so the 401 path is always taken cleanly.
+            try:
+                verify_password(payload.password, "$argon2id$v=19$m=65536,t=3,p=4$placeholder")
+            except Exception:
+                pass
             logger.warning("Auth failed — unknown email: %s", payload.email)
             raise PermissionDeniedError(_AUTH_FAIL_MSG)
 
@@ -142,6 +158,31 @@ class UserService:
         return Token(
             access_token=access_token,
             refresh_token=refresh_token,
+            token_type="bearer",
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        )
+
+    async def refresh(self, user_id_str: str) -> "Token":
+        """Issue a new access+refresh token pair from a valid refresh token's subject.
+
+        Args:
+            user_id_str: UUID string from the decoded refresh token's ``sub`` claim.
+
+        Returns:
+            New ``Token`` schema with fresh access and refresh tokens.
+
+        Raises:
+            PermissionDeniedError: If the user no longer exists or is deactivated.
+        """
+        from app.core.config import settings
+        user = await self.get_profile(user_id_str)
+        if not user.is_active:
+            raise PermissionDeniedError("Account is deactivated.")
+        access_token = create_access_token(str(user.id))
+        new_refresh_token = create_refresh_token(str(user.id))
+        return Token(
+            access_token=access_token,
+            refresh_token=new_refresh_token,
             token_type="bearer",
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )

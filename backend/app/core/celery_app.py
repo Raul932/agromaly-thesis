@@ -28,6 +28,7 @@ Beat Schedule (future):
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.config import settings
 
@@ -45,6 +46,7 @@ def create_celery_app() -> Celery:
         include=[
             "app.application.tasks.sync_weather_tasks",
             "app.application.tasks.sync_ndvi_tasks",
+            "app.application.tasks.anomaly_detection_task",
         ],
     )
 
@@ -80,18 +82,24 @@ def create_celery_app() -> Celery:
         timezone="UTC",
         enable_utc=True,
         # ------------------------------------------------------------------
-        # Beat Schedule (periodic tasks — placeholder for future use)
+        # Beat Schedule — Sentinel-2 revisit cycle is ~5 days.
+        # Running NDVI sync Mon+Thu keeps data fresh within the cycle.
+        # Anomaly detection runs 2 hours after NDVI sync to allow workers
+        # to finish persisting the new records before analysis starts.
         # ------------------------------------------------------------------
         beat_schedule={
-            # Example — uncomment and adjust when ready:
-            # "sync-all-ndvi-every-5-days": {
-            #     "task": "app.application.tasks.sync_ndvi_tasks.sync_ndvi_for_all_parcels",
-            #     "schedule": crontab(hour=3, minute=0),  # 03:00 UTC
-            # },
-            # "sync-all-weather-every-6-hours": {
-            #     "task": "app.application.tasks.sync_weather_tasks.sync_weather_for_all_parcels",
-            #     "schedule": crontab(minute=0, hour="*/6"),
-            # },
+            "sync-all-ndvi-twice-weekly": {
+                "task": "app.application.tasks.sync_ndvi_tasks.sync_ndvi_for_all_parcels",
+                "schedule": crontab(hour=2, minute=0, day_of_week="mon,thu"),
+            },
+            "sync-all-weather-daily": {
+                "task": "app.application.tasks.sync_weather_tasks.sync_weather_for_all_parcels",
+                "schedule": crontab(hour=6, minute=0),
+            },
+            "run-anomaly-detection-twice-weekly": {
+                "task": "app.application.tasks.anomaly_detection_task.run_anomaly_detection_for_all_parcels",
+                "schedule": crontab(hour=4, minute=0, day_of_week="mon,thu"),
+            },
         },
     )
 

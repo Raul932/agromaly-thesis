@@ -30,7 +30,7 @@ import uuid
 from typing import Optional, Sequence
 
 from geoalchemy2.functions import ST_Intersects, ST_MakeEnvelope
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -104,6 +104,19 @@ class ParcelRepositoryImpl(IParcelRepository):
             raise ParcelPersistenceError(
                 f"Database error while saving parcel id={parcel.id}."
             ) from exc
+
+    async def update_anomaly_status(self, parcel_id: uuid.UUID, status: str) -> None:
+        """Targeted UPDATE of only the last_anomaly_status column."""
+        try:
+            await self._session.execute(
+                update(ParcelORM)
+                .where(ParcelORM.id == parcel_id)
+                .values(last_anomaly_status=status)
+            )
+            await self._session.flush()
+            logger.debug("Anomaly status updated: parcel id=%s status=%s", parcel_id, status)
+        except SQLAlchemyError as exc:
+            logger.error("DB error updating anomaly status for parcel id=%s: %s", parcel_id, exc)
 
     async def delete(self, parcel_id: uuid.UUID) -> bool:
         """Hard-delete a parcel by UUID.
@@ -267,6 +280,28 @@ class ParcelRepositoryImpl(IParcelRepository):
             logger.error("DB error checking existence of parcel id=%s: %s", parcel_id, exc)
             raise ParcelPersistenceError(
                 f"Database error while checking existence of parcel id={parcel_id}."
+            ) from exc
+
+    async def find_by_owner_and_name(
+        self,
+        owner_id: uuid.UUID,
+        name: str,
+    ) -> Optional[Parcel]:
+        """Return the first parcel with the given name owned by owner_id, or None."""
+        try:
+            stmt = (
+                select(ParcelORM)
+                .where(ParcelORM.owner_id == owner_id)
+                .where(ParcelORM.name == name)
+                .limit(1)
+            )
+            result = await self._session.execute(stmt)
+            orm_obj = result.scalars().first()
+            return orm_obj.to_domain() if orm_obj else None
+        except SQLAlchemyError as exc:
+            logger.error("DB error finding parcel by name '%s': %s", name, exc)
+            raise ParcelPersistenceError(
+                f"Database error while finding parcel name='{name}'."
             ) from exc
 
     # ------------------------------------------------------------------

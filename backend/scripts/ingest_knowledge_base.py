@@ -137,6 +137,7 @@ def ingest(
     embeddings = OpenAIEmbeddings(
         model=embedding_model,
         openai_api_key=openai_api_key,
+        chunk_size=200,  # max documents per embedding API call (~50k tokens/batch)
     )
 
     Chroma.from_documents(

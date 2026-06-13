@@ -1,15 +1,30 @@
 """
 Pydantic Schemas: Anomaly Analysis
 =====================================
-Request/Response models for the ``GET /api/v1/parcels/{id}/analysis`` endpoint.
+Request/Response models for the analysis endpoints.
 """
 
 from __future__ import annotations
 
 import uuid
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class NdviBoundsSchema(BaseModel):
+    north: float
+    south: float
+    east: float
+    west: float
+
+
+class NdviImageResponse(BaseModel):
+    """Response for GET /parcels/{parcel_id}/ndvi-image."""
+    image_base64: str = Field(..., description="PNG image encoded as base64 string.")
+    bounds: NdviBoundsSchema = Field(
+        ..., description="Geographic bounding box of the image."
+    )
 
 
 class AnalysisResponse(BaseModel):
@@ -95,5 +110,33 @@ class AnalysisResponse(BaseModel):
     )
     recommendation: str = Field(
         ...,
-        description="Agronomic recommendation text for display in the mobile app.",
+        description="Farmer-friendly recommendation in Romanian.",
+    )
+    weather_context: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="14-day weather diagnostic summary (cause_hint, precip, dry_spell_days, etc.).",
+    )
+
+
+class ForecastDay(BaseModel):
+    """One day in a parcel's weather forecast."""
+
+    date: str = Field(..., description="ISO date (YYYY-MM-DD).")
+    weekday: str = Field(..., description="Romanian weekday abbreviation (Lun, Mar, ...).")
+    temp_max_c: float
+    temp_min_c: float
+    precipitation_mm: float
+    wind_speed_kmh: float
+    weather_code: Optional[int] = Field(
+        None, description="WMO weather interpretation code."
+    )
+
+
+class ForecastResponse(BaseModel):
+    """7-day forecast for a parcel, with plain-language Romanian warnings."""
+
+    days: List[ForecastDay] = Field(default_factory=list)
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="Romanian alerts (frost, heavy rain, heat, strong wind).",
     )

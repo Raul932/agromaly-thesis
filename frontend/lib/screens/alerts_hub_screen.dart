@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/alert.dart';
 import '../services/alert_service.dart';
 
-/// AI Alerts Hub — shows RAG-powered anomaly alerts from the backend.
+/// Centru Alerte AI — afișează alertele de anomalie generate de AI.
 class AlertsHubScreen extends StatefulWidget {
   const AlertsHubScreen({super.key});
 
@@ -13,6 +13,7 @@ class AlertsHubScreen extends StatefulWidget {
 class _AlertsHubScreenState extends State<AlertsHubScreen> {
   List<Alert> _alerts = [];
   bool _isLoading = true;
+  bool _isScanning = false;
   String? _error;
 
   @override
@@ -50,6 +51,42 @@ class _AlertsHubScreenState extends State<AlertsHubScreen> {
     _loadAlerts();
   }
 
+  Future<void> _scanAllParcels() async {
+    setState(() => _isScanning = true);
+    try {
+      final result = await AlertService.scanAllParcels();
+      if (mounted) {
+        final analyzed = result['parcels_analyzed'] ?? 0;
+        final found = result['anomalies_found'] ?? 0;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$analyzed câmp${analyzed == 1 ? '' : 'uri'} analizat${analyzed == 1 ? '' : 'e'}, '
+              '$found anomali${found == 1 ? 'e' : 'i'} detectat${found == 1 ? 'ă' : 'e'}.',
+            ),
+            backgroundColor:
+                found > 0 ? const Color(0xFFE76F51) : const Color(0xFF2D6A4F),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: const Color(0xFFE76F51),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isScanning = false);
+        _loadAlerts();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -66,7 +103,7 @@ class _AlertsHubScreenState extends State<AlertsHubScreen> {
             Icon(Icons.notifications_active, color: Color(0xFFE76F51), size: 22),
             SizedBox(width: 10),
             Text(
-              'AI Alerts Hub',
+              'Centru Alerte AI',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 17,
@@ -80,18 +117,59 @@ class _AlertsHubScreenState extends State<AlertsHubScreen> {
             TextButton(
               onPressed: _markAllRead,
               child: const Text(
-                'Mark all read',
+                'Marchează toate citite',
                 style: TextStyle(color: Color(0xFF52B788), fontSize: 13),
               ),
             ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white54),
-            onPressed: _loadAlerts,
-            tooltip: 'Refresh alerts',
+            onPressed: _isScanning ? null : _loadAlerts,
+            tooltip: 'Actualizează alertele',
           ),
         ],
       ),
-      body: _buildBody(),
+      body: Column(
+        children: [
+          if (_isScanning)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              color: const Color(0xFF1A2F45),
+              child: const Row(
+                children: [
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFF52B788),
+                    ),
+                  ),
+                  SizedBox(width: 10),
+                  Text(
+                    'Se analizează câmpurile...',
+                    style: TextStyle(color: Color(0xFF52B788), fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(child: _buildBody()),
+        ],
+      ),
+      floatingActionButton: _isScanning
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _scanAllParcels,
+              backgroundColor: const Color(0xFF1B4332),
+              icon: const Icon(Icons.radar, color: Color(0xFF52B788)),
+              label: const Text(
+                'Scanează acum',
+                style: TextStyle(
+                  color: Color(0xFF52B788),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
     );
   }
 
@@ -104,7 +182,7 @@ class _AlertsHubScreenState extends State<AlertsHubScreen> {
             CircularProgressIndicator(color: Color(0xFFE76F51)),
             SizedBox(height: 16),
             Text(
-              'Loading alerts...',
+              'Se încarcă alertele...',
               style: TextStyle(color: Colors.white54),
             ),
           ],
@@ -132,7 +210,8 @@ class _AlertsHubScreenState extends State<AlertsHubScreen> {
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFFE76F51)),
                 ),
-                child: const Text('Retry', style: TextStyle(color: Color(0xFFE76F51))),
+                child: const Text('Reîncearcă',
+                    style: TextStyle(color: Color(0xFFE76F51))),
               ),
             ],
           ),
@@ -160,7 +239,7 @@ class _AlertsHubScreenState extends State<AlertsHubScreen> {
             ),
             const SizedBox(height: 20),
             const Text(
-              'All Clear!',
+              'Totul în regulă!',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 20,
@@ -169,11 +248,23 @@ class _AlertsHubScreenState extends State<AlertsHubScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'No alerts from the AI anomaly detector.',
+              'Nicio anomalie detectată de sistemul AI.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.45),
                 fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 32),
+            OutlinedButton.icon(
+              onPressed: _isScanning ? null : _scanAllParcels,
+              icon: const Icon(Icons.radar, size: 18),
+              label: const Text('Scanează câmpurile acum'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF52B788),
+                side: const BorderSide(color: Color(0xFF52B788)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
             ),
           ],
@@ -201,7 +292,7 @@ class _AlertsHubScreenState extends State<AlertsHubScreen> {
                     color: Color(0xFFE76F51), size: 22),
                 const SizedBox(width: 10),
                 Text(
-                  '$unreadCount unread alert${unreadCount > 1 ? 's' : ''}',
+                  '$unreadCount alertă${unreadCount == 1 ? '' : 'e'} necitită${unreadCount == 1 ? '' : 'e'}',
                   style: const TextStyle(
                     color: Color(0xFFE76F51),
                     fontWeight: FontWeight.w600,
@@ -213,7 +304,7 @@ class _AlertsHubScreenState extends State<AlertsHubScreen> {
           ),
         Expanded(
           child: ListView.separated(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
             itemCount: _alerts.length,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (ctx, i) => _AlertCard(
@@ -252,6 +343,21 @@ class _AlertCardState extends State<_AlertCard> {
         return const Color(0xFFE9C46A);
       default:
         return const Color(0xFF52B788);
+    }
+  }
+
+  String _severityLabel(String severity) {
+    switch (severity) {
+      case 'critical':
+        return 'CRITIC';
+      case 'high':
+        return 'RIDICAT';
+      case 'medium':
+        return 'MEDIU';
+      case 'low':
+        return 'SCĂZUT';
+      default:
+        return severity.toUpperCase();
     }
   }
 
@@ -294,13 +400,14 @@ class _AlertCardState extends State<_AlertCard> {
                   ),
                 // Severity chip
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    alert.severity.toUpperCase(),
+                    _severityLabel(alert.severity),
                     style: TextStyle(
                       color: color,
                       fontSize: 10,
@@ -348,7 +455,8 @@ class _AlertCardState extends State<_AlertCard> {
                 height: 1.4,
               ),
               maxLines: _expanded ? null : 2,
-              overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+              overflow:
+                  _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
             ),
             if (_expanded && alert.hasRecommendation) ...[
               const SizedBox(height: 12),
@@ -370,7 +478,7 @@ class _AlertCardState extends State<_AlertCard> {
                             color: Color(0xFF52B788), size: 14),
                         SizedBox(width: 6),
                         Text(
-                          'AI Recommendation',
+                          'Recomandare AI',
                           style: TextStyle(
                             color: Color(0xFF52B788),
                             fontSize: 12,
@@ -410,8 +518,8 @@ class _AlertCardState extends State<_AlertCard> {
   String _formatDate(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    return '${diff.inDays}d ago';
+    if (diff.inMinutes < 60) return 'acum ${diff.inMinutes} min';
+    if (diff.inHours < 24) return 'acum ${diff.inHours}h';
+    return 'acum ${diff.inDays}z';
   }
 }

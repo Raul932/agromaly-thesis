@@ -75,6 +75,20 @@ class IParcelRepository(ABC):
         ...
 
     @abstractmethod
+    async def update_anomaly_status(self, parcel_id: uuid.UUID, status: str) -> None:
+        """Persist the latest anomaly detection result on the parcel row.
+
+        Only updates the ``last_anomaly_status`` column — all other fields
+        are untouched.  This is a targeted write to avoid overwriting NDVI
+        or geometry data with potentially stale domain-entity values.
+
+        Args:
+            parcel_id: UUID of the parcel to update.
+            status:    One of "HEALTHY", "ANOMALY_DETECTED", "INSUFFICIENT_DATA".
+        """
+        ...
+
+    @abstractmethod
     async def delete(self, parcel_id: uuid.UUID) -> bool:
         """Hard-delete a Parcel record by its primary key.
 
@@ -164,6 +178,25 @@ class IParcelRepository(ABC):
 
         Returns:
             ``True`` if the parcel exists, ``False`` otherwise.
+        """
+        ...
+
+    @abstractmethod
+    async def find_by_owner_and_name(
+        self,
+        owner_id: uuid.UUID,
+        name: str,
+    ) -> Optional[Parcel]:
+        """Find a parcel by exact name for a given owner.
+
+        Used to enforce per-owner name uniqueness before creation.
+
+        Args:
+            owner_id: UUID of the owning user.
+            name:     Exact parcel name to search for (case-sensitive).
+
+        Returns:
+            The matching ``Parcel`` entity, or ``None`` if not found.
         """
         ...
 

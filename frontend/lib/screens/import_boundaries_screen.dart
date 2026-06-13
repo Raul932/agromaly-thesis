@@ -1,18 +1,17 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import '../models/upload_session.dart';
 import '../services/upload_service.dart';
 
-/// Import Boundaries Screen — QR Code Cross-Device Upload Flow.
+/// Import Boundaries Screen — Link-based Cross-Device Upload Flow.
 ///
 /// Allows farmers to import APIA .gpx parcel boundary files from their PC.
 ///
 /// State machine:
-///   [idle]  → tap "Import from Computer"
+///   [idle]    → tap "Get Upload Link"
 ///   [loading] (creating session)
-///   [qr]   → show QR code + poll for status
+///   [link]    → show copyable URL + poll for status
 ///   [preview] → show detected parcels, confirm or discard
 ///   [saving]  → POST /confirm
 ///   [done]    → success + navigate
@@ -24,10 +23,9 @@ class ImportBoundariesScreen extends StatefulWidget {
   State<ImportBoundariesScreen> createState() => _ImportBoundariesScreenState();
 }
 
-enum _UploadState { idle, loading, qr, preview, saving, done, error }
+enum _UploadState { idle, loading, link, preview, saving, done, error }
 
-class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
-    with SingleTickerProviderStateMixin {
+class _ImportBoundariesScreenState extends State<ImportBoundariesScreen> {
   final _uploadService = UploadService();
 
   _UploadState _state = _UploadState.idle;
@@ -45,27 +43,10 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
   Timer? _countdownTimer;
   int _secondsRemaining = 900; // 15 min
 
-  // Animation
-  late final AnimationController _pulseCtrl;
-  late final Animation<double> _pulseAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-    _pulseAnim = Tween(begin: 0.85, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
-    );
-  }
-
   @override
   void dispose() {
     _pollTimer?.cancel();
     _countdownTimer?.cancel();
-    _pulseCtrl.dispose();
     super.dispose();
   }
 
@@ -89,7 +70,7 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
 
       setState(() {
         _session = session;
-        _state = _UploadState.qr;
+        _state = _UploadState.link;
       });
 
       _startPolling();
@@ -133,21 +114,19 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
           _stopPolling();
           _stopCountdown();
           setState(() {
-            _errorMessage = 'Session expired. Please generate a new QR code.';
+            _errorMessage = 'Session expired. Please generate a new upload link.';
             _state = _UploadState.error;
           });
           break;
         case UploadSessionStatus.confirmed:
-          // Already confirmed (e.g. re-poll after confirm) — ignore
           break;
         case UploadSessionStatus.pending:
-          // Still waiting — do nothing, keep polling
           break;
         default:
           break;
       }
     } catch (_) {
-      // Ignore poll errors — network hiccup, keep retrying
+      // Ignore poll errors — keep retrying
     }
   }
 
@@ -164,9 +143,9 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
         } else {
           _stopPolling();
           _stopCountdown();
-          if (_state == _UploadState.qr) {
+          if (_state == _UploadState.link) {
             _state = _UploadState.error;
-            _errorMessage = 'Session expired. Please generate a new QR code.';
+            _errorMessage = 'Session expired. Please generate a new upload link.';
           }
         }
       });
@@ -232,7 +211,7 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
         ),
         title: const Row(
           children: [
-            Icon(Icons.qr_code_scanner, color: Color(0xFF52B788), size: 22),
+            Icon(Icons.upload_file, color: Color(0xFF52B788), size: 22),
             SizedBox(width: 10),
             Text(
               'Import from Computer',
@@ -266,8 +245,8 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
         return _buildIdleView();
       case _UploadState.loading:
         return _buildLoadingView('Creating upload session…');
-      case _UploadState.qr:
-        return _buildQrView();
+      case _UploadState.link:
+        return _buildLinkView();
       case _UploadState.preview:
         return _buildPreviewView();
       case _UploadState.saving:
@@ -288,7 +267,6 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
       key: const ValueKey('idle'),
       padding: const EdgeInsets.all(20),
       children: [
-        // How it works banner
         _card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -301,7 +279,7 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
                       color: const Color(0xFF52B788).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.qr_code_2,
+                    child: const Icon(Icons.link,
                         color: Color(0xFF52B788), size: 28),
                   ),
                   const SizedBox(width: 14),
@@ -310,7 +288,7 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Scan · Drop · Done',
+                          'Link · Drop · Done',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 16,
@@ -337,7 +315,6 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
         ),
         const SizedBox(height: 20),
 
-        // Format support
         _card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -358,7 +335,6 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
         ),
         const SizedBox(height: 28),
 
-        // CTA
         SizedBox(
           height: 56,
           child: ElevatedButton.icon(
@@ -371,9 +347,9 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
               ),
               elevation: 0,
             ),
-            icon: const Icon(Icons.qr_code_scanner, size: 22),
+            icon: const Icon(Icons.link, size: 22),
             label: const Text(
-              'Generate QR Code',
+              'Get Upload Link',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
           ),
@@ -384,8 +360,8 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
 
   List<Widget> _buildSteps() {
     final steps = [
-      (Icons.smartphone, 'Tap "Generate QR Code" on this screen'),
-      (Icons.qr_code, 'Open the QR link on your PC browser'),
+      (Icons.touch_app, 'Tap "Get Upload Link" on this screen'),
+      (Icons.open_in_browser, 'Copy the link and open it on your PC browser'),
       (Icons.upload_file, 'Drag your .gpx files from APIA downloads'),
       (Icons.check_circle_outline, 'Review & confirm on this screen'),
     ];
@@ -454,8 +430,8 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
           const SizedBox(height: 20),
           Text(
             message,
-            style:
-                TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
           ),
         ],
       ),
@@ -463,10 +439,10 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
   }
 
   // -------------------------------------------------------------------------
-  // QR Code screen
+  // Link screen
   // -------------------------------------------------------------------------
 
-  Widget _buildQrView() {
+  Widget _buildLinkView() {
     final session = _session!;
     final mins = _secondsRemaining ~/ 60;
     final secs = _secondsRemaining % 60;
@@ -474,12 +450,12 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
     final isUrgent = _secondsRemaining < 120;
 
     return ListView(
-      key: const ValueKey('qr'),
+      key: const ValueKey('link'),
       padding: const EdgeInsets.all(20),
       children: [
-        // Instruction chip
+        // Instruction banner
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: const Color(0xFF52B788).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(12),
@@ -487,19 +463,15 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
               color: const Color(0xFF52B788).withValues(alpha: 0.25),
             ),
           ),
-          child: Row(
+          child: const Row(
             children: [
-              const Icon(Icons.info_outline,
-                  color: Color(0xFF52B788), size: 18),
-              const SizedBox(width: 10),
-              const Expanded(
+              Icon(Icons.info_outline, color: Color(0xFF52B788), size: 18),
+              SizedBox(width: 10),
+              Expanded(
                 child: Text(
-                  'Open this on your PC browser — then drag your .gpx files',
+                  'Copy this link and open it on your PC browser — then drag your .gpx files',
                   style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                    height: 1.4,
-                  ),
+                      color: Colors.white70, fontSize: 13, height: 1.4),
                 ),
               ),
             ],
@@ -507,36 +479,88 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
         ),
         const SizedBox(height: 24),
 
-        // QR Card
+        // Link card
         _card(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Pulsing ring around QR code
-              ScaleTransition(
-                scale: _pulseAnim,
+              // Header
+              const Row(
+                children: [
+                  Icon(Icons.link, color: Color(0xFF52B788), size: 24),
+                  SizedBox(width: 10),
+                  Text(
+                    'Upload Link Ready',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Copyable URL
+              InkWell(
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: session.uploadUrl));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    _snackBar('Link copied to clipboard'),
+                  );
+                },
+                borderRadius: BorderRadius.circular(12),
                 child: Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF52B788).withValues(alpha: 0.4),
-                        blurRadius: 24,
-                        spreadRadius: 4,
+                    color: const Color(0xFF52B788).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF52B788).withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          session.uploadUrl,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF52B788),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.copy, color: Colors.white, size: 14),
+                            SizedBox(width: 5),
+                            Text(
+                              'Copy',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                  child: QrImageView(
-                    data: session.uploadUrl,
-                    version: QrVersions.auto,
-                    size: 220,
-                    backgroundColor: Colors.white,
-                    errorCorrectionLevel: QrErrorCorrectLevel.M,
-                  ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
               // Timer
               Row(
@@ -544,7 +568,7 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
                 children: [
                   Icon(
                     Icons.timer_outlined,
-                    size: 16,
+                    size: 15,
                     color: isUrgent ? Colors.orange : Colors.white38,
                   ),
                   const SizedBox(width: 6),
@@ -559,57 +583,9 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-
-              // URL (copyable)
-              InkWell(
-                onTap: () {
-                  Clipboard.setData(
-                    ClipboardData(text: session.uploadUrl),
-                  );
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    _snackBar('URL copied to clipboard'),
-                  );
-                },
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.08),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.link,
-                          color: Colors.white38, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          session.uploadUrl,
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 11,
-                            fontFamily: 'monospace',
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(Icons.copy,
-                          color: Colors.white38, size: 14),
-                    ],
-                  ),
-                ),
-              ),
             ],
           ),
         ),
-
         const SizedBox(height: 16),
 
         // Polling indicator
@@ -647,7 +623,6 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
       key: const ValueKey('preview'),
       padding: const EdgeInsets.all(20),
       children: [
-        // Header
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -677,10 +652,7 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
                     const SizedBox(height: 2),
                     const Text(
                       'Review before saving to your account',
-                      style: TextStyle(
-                        color: Colors.white54,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
                     ),
                   ],
                 ),
@@ -690,11 +662,9 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
         ),
         const SizedBox(height: 16),
 
-        // Parcel preview cards
         ..._previews.map(_buildParcelPreviewCard),
         const SizedBox(height: 24),
 
-        // Confirm button
         SizedBox(
           height: 56,
           child: ElevatedButton.icon(
@@ -717,12 +687,9 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
         ),
         const SizedBox(height: 12),
 
-        // Discard
         TextButton(
           onPressed: _reset,
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.white38,
-          ),
+          style: TextButton.styleFrom(foregroundColor: Colors.white38),
           child: const Text('Discard and start over'),
         ),
       ],
@@ -768,9 +735,7 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
                     Text(
                       p.filename,
                       style: const TextStyle(
-                        color: Colors.white38,
-                        fontSize: 11,
-                      ),
+                          color: Colors.white38, fontSize: 11),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -792,8 +757,7 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
                 _metaChip(Icons.calendar_today, p.year!),
               _metaChip(Icons.place,
                   '${p.centreLat.toStringAsFixed(4)}°, ${p.centreLon.toStringAsFixed(4)}°'),
-              _metaChip(
-                  Icons.timeline, '${p.coordinateCount} vertices'),
+              _metaChip(Icons.timeline, '${p.coordinateCount} vertices'),
             ],
           ),
         ],
@@ -824,11 +788,8 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
                   width: 2,
                 ),
               ),
-              child: const Icon(
-                Icons.check_rounded,
-                color: Color(0xFF52B788),
-                size: 40,
-              ),
+              child: const Icon(Icons.check_rounded,
+                  color: Color(0xFF52B788), size: 40),
             ),
             const SizedBox(height: 24),
             Text(
@@ -866,16 +827,14 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
                 icon: const Icon(Icons.map_outlined),
                 label: const Text(
                   'View on Map',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w700),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
               ),
             ),
             const SizedBox(height: 12),
             TextButton(
               onPressed: _reset,
-              style: TextButton.styleFrom(
-                  foregroundColor: Colors.white38),
+              style: TextButton.styleFrom(foregroundColor: Colors.white38),
               child: const Text('Import more files'),
             ),
           ],
@@ -966,8 +925,7 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
     return Row(
       children: [
         Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
             color: const Color(0xFF52B788).withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(6),
@@ -1015,10 +973,8 @@ class _ImportBoundariesScreenState extends State<ImportBoundariesScreen>
         children: [
           Icon(icon, size: 12, color: Colors.white38),
           const SizedBox(width: 5),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white54, fontSize: 11),
-          ),
+          Text(label,
+              style: const TextStyle(color: Colors.white54, fontSize: 11)),
         ],
       ),
     );

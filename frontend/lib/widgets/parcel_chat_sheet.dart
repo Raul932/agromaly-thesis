@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/parcel.dart';
 import '../services/chat_service.dart';
+import '../services/chat_history_store.dart';
 
 class ParcelChatSheet extends StatefulWidget {
   final Parcel parcel;
@@ -19,14 +20,45 @@ class _ParcelChatSheetState extends State<ParcelChatSheet> {
   final List<Map<String, String>> _history = [];
   bool _isTyping = false;
 
+  static const _welcome =
+      'Salut! Sunt Agronomul tău AI pentru această parcelă. Întreabă-mă orice despre '
+      'sănătatea culturilor, decizii de însămânțare, combaterea dăunătorilor sau ce '
+      'înseamnă starea vegetației pentru câmpul tău.';
+
+  String get _historyKey => ChatHistoryStore.parcelKey(widget.parcel.id);
+
   @override
   void initState() {
     super.initState();
-    _messages.add(const _ChatMessage(
-      role: 'assistant',
-      text:
-          'Hello! I am your AI Agronomist for this parcel. Ask me anything about crop health, planting decisions, pest management, or what the NDVI data means for your field.',
-    ));
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    final saved = await ChatHistoryStore.load(_historyKey);
+    if (!mounted) return;
+    setState(() {
+      _messages.clear();
+      _history.clear();
+      if (saved.isEmpty) {
+        _messages.add(const _ChatMessage(role: 'assistant', text: _welcome));
+      } else {
+        for (final m in saved) {
+          final msg = _ChatMessage.fromJson(m);
+          _messages.add(msg);
+          if (!msg.isError) {
+            _history.add({'role': msg.role, 'content': msg.text});
+          }
+        }
+      }
+    });
+    _scrollToBottom();
+  }
+
+  Future<void> _persist() async {
+    await ChatHistoryStore.save(
+      _historyKey,
+      _messages.map((m) => m.toJson()).toList(),
+    );
   }
 
   @override
@@ -61,6 +93,7 @@ class _ParcelChatSheetState extends State<ParcelChatSheet> {
           _messages.add(_ChatMessage(role: 'assistant', text: answer));
           _isTyping = false;
         });
+        _persist();
         _scrollToBottom();
       }
     } catch (e) {
@@ -68,11 +101,12 @@ class _ParcelChatSheetState extends State<ParcelChatSheet> {
         setState(() {
           _messages.add(_ChatMessage(
             role: 'assistant',
-            text: 'Sorry, I could not reach the AI service. ${e.toString().replaceFirst("Exception: ", "")}',
+            text: 'Ne pare rău, nu am putut contacta serviciul AI. ${e.toString().replaceFirst("Exception: ", "")}',
             isError: true,
           ));
           _isTyping = false;
         });
+        _persist();
         _scrollToBottom();
       }
     }
@@ -92,13 +126,20 @@ class _ParcelChatSheetState extends State<ParcelChatSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Capture keyboard height here so the DraggableScrollableSheet builder
+    // (which gets a child context) can use it to push content above the IME.
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final navBarInset = MediaQuery.paddingOf(context).bottom;
+
     return DraggableScrollableSheet(
       initialChildSize: 0.75,
       minChildSize: 0.4,
       maxChildSize: 0.95,
       expand: false,
-      builder: (context, scrollController) {
-        return Container(
+      builder: (_, scrollController) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: bottomInset + navBarInset),
+          child: Container(
           decoration: const BoxDecoration(
             color: Color(0xFF0D1B2A),
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -133,7 +174,7 @@ class _ParcelChatSheetState extends State<ParcelChatSheet> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'AI Agronomist',
+                            'Agronom AI',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 15,
@@ -194,7 +235,7 @@ class _ParcelChatSheetState extends State<ParcelChatSheet> {
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) => _send(),
                           decoration: InputDecoration(
-                            hintText: 'Ask about this parcel...',
+                            hintText: 'Întreabă despre această parcelă...',
                             hintStyle: TextStyle(
                               color: Colors.white.withValues(alpha: 0.35),
                               fontSize: 14,
@@ -237,7 +278,8 @@ class _ParcelChatSheetState extends State<ParcelChatSheet> {
               ),
             ],
           ),
-        );
+        ),
+          );
       },
     );
   }
@@ -253,6 +295,18 @@ class _ChatMessage {
     required this.text,
     this.isError = false,
   });
+
+  Map<String, dynamic> toJson() => {
+        'role': role,
+        'text': text,
+        'isError': isError,
+      };
+
+  factory _ChatMessage.fromJson(Map<String, dynamic> json) => _ChatMessage(
+        role: json['role'] as String? ?? 'assistant',
+        text: json['text'] as String? ?? '',
+        isError: json['isError'] as bool? ?? false,
+      );
 }
 
 class _MessageBubble extends StatelessWidget {

@@ -93,6 +93,13 @@ class AlertRepositoryImpl(IAlertRepository):
             raise AlertPersistenceError(
                 f"DB error listing alerts for owner {owner_id}."
             ) from exc
+        except Exception as exc:
+            logger.error(
+                "Failed to map alerts for owner %s: %s", owner_id, exc, exc_info=True
+            )
+            raise AlertPersistenceError(
+                f"Error mapping alerts for owner {owner_id}."
+            ) from exc
 
     async def list_for_parcel(
         self,
@@ -118,6 +125,13 @@ class AlertRepositoryImpl(IAlertRepository):
         except SQLAlchemyError as exc:
             raise AlertPersistenceError(
                 f"DB error listing alerts for parcel {parcel_id}."
+            ) from exc
+        except Exception as exc:
+            logger.error(
+                "Failed to map alerts for parcel %s: %s", parcel_id, exc, exc_info=True
+            )
+            raise AlertPersistenceError(
+                f"Error mapping alerts for parcel {parcel_id}."
             ) from exc
 
     async def count_unread(self, owner_id: uuid.UUID) -> int:

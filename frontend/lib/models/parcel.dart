@@ -15,6 +15,7 @@ class Parcel {
   final String status;
   final double? lastNdvi;
   final String? lastNdviAt;
+  final String? lastAnomalyStatus;
   final String createdAt;
   final String updatedAt;
 
@@ -29,6 +30,7 @@ class Parcel {
     required this.status,
     this.lastNdvi,
     this.lastNdviAt,
+    this.lastAnomalyStatus,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -41,16 +43,21 @@ class Parcel {
       description: json['description'] as String?,
       geometryWkt: json['geometry_wkt'] as String,
       areaHa: (json['area_ha'] as num).toDouble(),
-      cropType: json['crop_type'] as String? ?? 'unknown',
-      status: json['status'] as String? ?? 'pending',
+      cropType: json['crop_type'] as String? ?? 'UNKNOWN',
+      status: json['status'] as String? ?? 'PENDING',
       lastNdvi: json['last_ndvi'] != null
           ? (json['last_ndvi'] as num).toDouble()
           : null,
       lastNdviAt: json['last_ndvi_at'] as String?,
+      lastAnomalyStatus: json['last_anomaly_status'] as String?,
       createdAt: json['created_at'] as String,
       updatedAt: json['updated_at'] as String,
     );
   }
+
+  bool get hasAnomaly => lastAnomalyStatus == 'ANOMALY_DETECTED';
+  bool get isHealthy => lastAnomalyStatus == 'HEALTHY';
+  bool get isInsufficient => lastAnomalyStatus == 'INSUFFICIENT_DATA';
 
   /// Parse WKT MULTIPOLYGON → list of polygon rings as LatLng lists.
   ///

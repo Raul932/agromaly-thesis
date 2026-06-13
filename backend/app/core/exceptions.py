@@ -62,6 +62,10 @@ class EmailAlreadyRegisteredError(ConflictError):
     message = "A user with this email address is already registered."
 
 
+class ParcelAlreadyExistsError(ConflictError):
+    message = "A parcel with this name already exists."
+
+
 # ---------------------------------------------------------------------------
 # Authorization
 # ---------------------------------------------------------------------------
@@ -88,6 +92,11 @@ class InvalidGeometryError(ValidationError):
 # ---------------------------------------------------------------------------
 # External Service Errors
 # ---------------------------------------------------------------------------
+
+class PersistenceError(AgromalyError):
+    """Raised when a database operation fails unexpectedly."""
+    message = "A database operation failed."
+
 
 class ExternalServiceError(AgromalyError):
     """Raised when a call to an external API (weather, satellite) fails."""

@@ -104,6 +104,13 @@ class ParcelCreate(BaseModel):
             "from the geometry using an equal-area projection."
         ),
     )
+    clip_to_existing: bool = Field(
+        default=False,
+        description=(
+            "If True, clip the new polygon to remove any overlap with parcels "
+            "already owned by this user (Shapely difference operation)."
+        ),
+    )
 
 
 class ParcelUpdate(BaseModel):
@@ -147,6 +154,10 @@ class ParcelResponse(BaseModel):
         description="Most recent NDVI value (-1.0 to 1.0). None if no satellite data yet.",
     )
     last_ndvi_at: Optional[datetime] = None
+    last_anomaly_status: Optional[str] = Field(
+        default=None,
+        description="Most recent anomaly detection result (HEALTHY/ANOMALY_DETECTED/INSUFFICIENT_DATA).",
+    )
     created_at: datetime
     updated_at: datetime
 

@@ -35,16 +35,16 @@ def _raise_openai_error(exc: Exception) -> None:
     if "insufficient_quota" in msg or "RateLimitError" in name:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="OpenAI quota exceeded. Please add credits at platform.openai.com/settings/billing.",
+            detail="Cota OpenAI a fost depășită. Adaugă credite la platform.openai.com/settings/billing.",
         )
     if "AuthenticationError" in name or "invalid_api_key" in msg:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="OpenAI API key is invalid.",
+            detail="Cheia API OpenAI este invalidă.",
         )
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail=f"AI service error: {name}",
+        detail=f"Eroare la serviciul AI: {name}",
     )
 
 
@@ -54,7 +54,7 @@ def _raise_openai_error(exc: Exception) -> None:
     summary="Global agronomic chatbot",
     description=(
         "Ask any agricultural question. The RAG pipeline retrieves relevant "
-        "excerpts from the knowledge base (PDF manuals) and uses gpt-4o-mini "
+        "excerpts from the knowledge base (PDF manuals) and uses gpt-4o "
         "to generate an expert answer."
     ),
     responses={
@@ -71,7 +71,7 @@ async def ask_global(
     if rag is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI service is not available. OPENAI_API_KEY is not configured.",
+            detail="Serviciul AI nu este disponibil. OPENAI_API_KEY nu este configurat.",
         )
 
     history = [{"role": m.role, "content": m.content} for m in body.history]
@@ -110,15 +110,15 @@ async def ask_parcel(
     if rag is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI service is not available. OPENAI_API_KEY is not configured.",
+            detail="Serviciul AI nu este disponibil. OPENAI_API_KEY nu este configurat.",
         )
 
     # Ownership check
     parcel = await parcel_repo.get_by_id(parcel_id)
     if parcel is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parcel not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parcela nu a fost găsită.")
     if parcel.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acces interzis.")
 
     # Build parcel context from latest NDVI
     all_records = await ndvi_repo.list_by_parcel(parcel_id, limit=90)
@@ -127,7 +127,7 @@ async def ask_parcel(
 
     if reliable:
         cloud_gap = (total - len(reliable)) / total if total > 0 else 0.0
-        analysis = _compute_anomaly_score(reliable, cloud_gap)
+        analysis = _compute_anomaly_score(reliable, cloud_gap, weather={})
         crop = getattr(parcel, "crop_type", "Unknown")
         parcel_context = {
             "name": parcel.name,

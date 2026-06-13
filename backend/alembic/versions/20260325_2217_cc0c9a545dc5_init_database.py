@@ -35,7 +35,13 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
-    op.create_index('uix_users_email_lower', 'users', [sa.text("lower(email)")], unique=True)
+    # Functional index on lower(email). Use raw SQL via op.execute — passing
+    # sa.text("lower(email)") to create_index renders the column as a quoted
+    # string literal lower('email'), producing a constant key that collides
+    # on every second row. Raw DDL guarantees the column is referenced.
+    op.execute(
+        "CREATE UNIQUE INDEX uix_users_email_lower ON users (lower(email))"
+    )
     op.create_table('parcels',
     sa.Column('id', sa.UUID(), nullable=False, comment='Globally unique identifier for the parcel.'),
     sa.Column('owner_id', sa.UUID(), nullable=False, comment='FK → users.id. Cascaded on user deletion.'),

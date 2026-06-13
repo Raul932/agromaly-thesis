@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/chat_service.dart';
+import '../services/chat_history_store.dart';
 
 /// Global AI Agronomist — a full-screen conversational assistant
 /// powered by the backend's RAG pipeline (POST /api/v1/chat/ask).
@@ -24,26 +25,57 @@ class _ChatScreenState extends State<ChatScreen>
 
   // Suggested starter questions
   static const _starters = [
-    'What causes NDVI anomalies in wheat fields?',
-    'How should I treat corn affected by drought stress?',
-    'What is the optimal fertilization schedule for sunflowers?',
-    'When is the best time to apply pesticides?',
+    'De ce s-au îngălbenit frunzele de grâu?',
+    'Cum tratez porumbul afectat de secetă?',
+    'Care e schema optimă de fertilizare la floarea-soarelui?',
+    'Când e cel mai bun moment să aplic tratamentele?',
   ];
+
+  static const _greeting =
+      'Salut! Sunt Agronomul tău AI din platforma Agromaly. '
+      'Te pot ajuta cu sănătatea culturilor, combaterea dăunătorilor, irigare, '
+      'fertilizare și cele mai bune practici agricole.\n\n'
+      'Cu ce te pot ajuta astăzi?';
 
   @override
   void initState() {
     super.initState();
-    // Greeting message from the AI
-    _messages.add(
-      _ChatMessage(
-        text:
-            'Hello! I am your AI Agronomist powered by the Agromaly RAG pipeline. '
-            'I can answer questions about crop health, pest management, irrigation, '
-            'soil science, and agronomic best practices.\n\n'
-            'What would you like to know today?',
-        isUser: false,
-        timestamp: DateTime.now(),
-      ),
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    final saved = await ChatHistoryStore.load(ChatHistoryStore.globalKey);
+    if (!mounted) return;
+    setState(() {
+      _messages.clear();
+      _history.clear();
+      if (saved.isEmpty) {
+        _messages.add(_ChatMessage(
+          text: _greeting,
+          isUser: false,
+          timestamp: DateTime.now(),
+        ));
+      } else {
+        for (final m in saved) {
+          final msg = _ChatMessage.fromJson(m);
+          _messages.add(msg);
+          // Rebuild RAG history from non-error turns
+          if (!msg.isOffline) {
+            _history.add({
+              'role': msg.isUser ? 'user' : 'assistant',
+              'content': msg.text,
+            });
+          }
+        }
+      }
+    });
+    _scrollToBottom();
+  }
+
+  Future<void> _persist() async {
+    await ChatHistoryStore.save(
+      ChatHistoryStore.globalKey,
+      _messages.map((m) => m.toJson()).toList(),
     );
   }
 
@@ -88,10 +120,11 @@ class _ChatScreenState extends State<ChatScreen>
         ));
         _isSending = false;
       });
+      _persist();
     } catch (e) {
       setState(() {
         _messages.add(_ChatMessage(
-          text: 'Could not reach the AI service. '
+          text: 'Nu am putut contacta serviciul AI. '
               '${e.toString().replaceFirst("Exception: ", "")}',
           isUser: false,
           timestamp: DateTime.now(),
@@ -99,6 +132,7 @@ class _ChatScreenState extends State<ChatScreen>
         ));
         _isSending = false;
       });
+      _persist();
     }
 
     _scrollToBottom();
@@ -135,7 +169,7 @@ class _ChatScreenState extends State<ChatScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'AI Agronomist',
+                  'Agronom AI',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -143,7 +177,7 @@ class _ChatScreenState extends State<ChatScreen>
                   ),
                 ),
                 Text(
-                  'RAG-powered crop advisor',
+                  'Consultant agricol inteligent',
                   style: TextStyle(
                     color: Colors.white38,
                     fontSize: 11,
@@ -156,15 +190,19 @@ class _ChatScreenState extends State<ChatScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.white38),
-            tooltip: 'Clear conversation',
-            onPressed: () => setState(() {
-              _messages.clear();
-              _messages.add(_ChatMessage(
-                text: 'Conversation cleared. How can I help you today?',
-                isUser: false,
-                timestamp: DateTime.now(),
-              ));
-            }),
+            tooltip: 'Șterge conversația',
+            onPressed: () {
+              setState(() {
+                _messages.clear();
+                _history.clear();
+                _messages.add(_ChatMessage(
+                  text: 'Conversație ștearsă. Cu ce te pot ajuta?',
+                  isUser: false,
+                  timestamp: DateTime.now(),
+                ));
+              });
+              ChatHistoryStore.clear(ChatHistoryStore.globalKey);
+            },
           ),
         ],
       ),
@@ -355,7 +393,7 @@ class _ChatScreenState extends State<ChatScreen>
               controller: _inputController,
               style: const TextStyle(color: Colors.white, fontSize: 14),
               decoration: InputDecoration(
-                hintText: 'Ask the AI Agronomist...',
+                hintText: 'Întreabă Agronomul AI...',
                 hintStyle:
                     const TextStyle(color: Colors.white38, fontSize: 14),
                 filled: true,
@@ -481,4 +519,19 @@ class _ChatMessage {
     required this.timestamp,
     this.isOffline = false,
   });
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'isUser': isUser,
+        'timestamp': timestamp.toIso8601String(),
+        'isOffline': isOffline,
+      };
+
+  factory _ChatMessage.fromJson(Map<String, dynamic> json) => _ChatMessage(
+        text: json['text'] as String? ?? '',
+        isUser: json['isUser'] as bool? ?? false,
+        timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ??
+            DateTime.now(),
+        isOffline: json['isOffline'] as bool? ?? false,
+      );
 }

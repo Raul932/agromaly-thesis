@@ -20,7 +20,7 @@ class _AddParcelScreenState extends State<AddParcelScreen> {
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _areaController = TextEditingController(text: '5.2');
-  String _selectedCropType = 'wheat';
+  String _selectedCropType = 'WHEAT';
   bool _isSubmitting = false;
   String? _error;
 

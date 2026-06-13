@@ -37,6 +37,37 @@ logger = get_task_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# All-Parcels Dispatcher Task (used by Celery Beat)
+# ---------------------------------------------------------------------------
+
+@shared_task(
+    bind=True,
+    name="app.application.tasks.sync_ndvi_tasks.sync_ndvi_for_all_parcels",
+    max_retries=0,
+    acks_late=True,
+)
+def sync_ndvi_for_all_parcels(self) -> dict:
+    """Dispatch individual NDVI sync tasks for every active parcel."""
+    parcel_ids = asyncio.run(_async_list_active_parcel_ids())
+    for pid in parcel_ids:
+        sync_ndvi_for_parcel.delay(pid)
+    logger.info("sync_ndvi_for_all_parcels dispatched %d tasks", len(parcel_ids))
+    return {"dispatched": len(parcel_ids)}
+
+
+async def _async_list_active_parcel_ids() -> list[str]:
+    import app.infrastructure.db.models  # noqa: F401
+    from app.domain.entities.parcel import ParcelStatus
+    from app.infrastructure.db.session import AsyncSessionLocal
+    from app.infrastructure.repositories.parcel_repository_impl import ParcelRepositoryImpl
+
+    async with AsyncSessionLocal() as session:
+        repo = ParcelRepositoryImpl(session)
+        parcels = await repo.list_all(limit=10000)
+        return [str(p.id) for p in parcels if p.status == ParcelStatus.ACTIVE]
+
+
+# ---------------------------------------------------------------------------
 # Public Celery Task
 # ---------------------------------------------------------------------------
 

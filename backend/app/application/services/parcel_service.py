@@ -25,6 +25,7 @@ from typing import Optional, Tuple
 
 from app.core.exceptions import (
     InvalidGeometryError,
+    ParcelAlreadyExistsError,
     ParcelNotFoundError,
     PermissionDeniedError,
 )
@@ -75,9 +76,18 @@ class ParcelService:
             "Creating parcel name=%r for owner id=%s", payload.name, owner.id
         )
 
+        existing = await self._parcel_repo.find_by_owner_and_name(owner.id, payload.name)
+        if existing is not None:
+            raise ParcelAlreadyExistsError(
+                f"You already have a parcel named '{payload.name}'."
+            )
+
         geometry_wkt, area_ha = _geojson_to_wkt_and_area(
             payload.geometry.model_dump(), payload.area_ha
         )
+
+        if payload.clip_to_existing:
+            geometry_wkt, area_ha = await self._clip_to_existing_parcels(geometry_wkt, owner.id)
 
         new_parcel = Parcel(
             owner_id=owner.id,
@@ -130,6 +140,43 @@ class ParcelService:
                 "Failed to enqueue background sync tasks for parcel %s: %s",
                 parcel_id_str, exc,
             )
+
+    async def _clip_to_existing_parcels(
+        self, new_wkt: str, owner_id: uuid.UUID
+    ) -> tuple[str, float]:
+        """Clip new polygon against all existing parcels owned by this user.
+
+        Returns the clipped WKT and its recalculated area in hectares.
+        Raises InvalidGeometryError if the result is empty (fully overlapped).
+        """
+        from shapely import wkt as shapely_wkt
+        from shapely.ops import unary_union
+
+        existing = await self._parcel_repo.list_by_owner(owner_id)
+        clean_new = new_wkt.split(";", 1)[-1]
+        new_geom = shapely_wkt.loads(clean_new)
+
+        existing_geoms = []
+        for p in existing:
+            clean = p.geometry_wkt.split(";", 1)[-1]
+            try:
+                existing_geoms.append(shapely_wkt.loads(clean))
+            except Exception:
+                pass
+
+        if existing_geoms:
+            clipped = new_geom.difference(unary_union(existing_geoms))
+            if clipped.is_empty:
+                raise InvalidGeometryError(
+                    "After clipping, the parcel area is empty — it is fully "
+                    "overlapped by existing parcels."
+                )
+            final_geom = clipped
+        else:
+            final_geom = new_geom
+
+        area_ha = _compute_area_ha(final_geom)
+        return final_geom.wkt, area_ha
 
     # ------------------------------------------------------------------
     # Read
@@ -330,3 +377,15 @@ def _geojson_to_wkt_and_area(
 
     logger.debug("Auto-calculated area: %.4f ha", area_ha)
     return wkt, area_ha
+
+
+def _compute_area_ha(shapely_geom) -> float:
+    """Compute area in hectares for a Shapely geometry using equal-area projection."""
+    import pyproj
+    from shapely.ops import transform as shapely_transform
+
+    wgs84 = pyproj.CRS("EPSG:4326")
+    equal_area = pyproj.CRS("EPSG:6933")
+    project = pyproj.Transformer.from_crs(wgs84, equal_area, always_xy=True).transform
+    projected = shapely_transform(project, shapely_geom)
+    return projected.area / 10_000.0

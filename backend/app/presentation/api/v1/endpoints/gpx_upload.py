@@ -43,7 +43,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.services import gpx_service
 from app.application.services.parcel_service import ParcelService
+from app.core.exceptions import ParcelAlreadyExistsError
 from app.core.security import get_current_user
+from app.domain.entities.parcel import CropType
 from app.domain.entities.user import User
 from app.infrastructure.db.session import get_async_session
 from app.infrastructure.repositories.parcel_repository_impl import ParcelRepositoryImpl
@@ -54,7 +56,6 @@ from app.presentation.schemas.gpx import (
     UploadStatusResponse,
 )
 from app.presentation.schemas.parcel import GeoJSONGeometry, ParcelCreate
-from app.domain.entities.parcel import CropType
 
 logger = logging.getLogger(__name__)
 
@@ -82,34 +83,63 @@ def _base_url(request: Request) -> str:
 # ---------------------------------------------------------------------------
 
 _CROP_MAP: dict[str, CropType] = {
-    "porumb":     CropType.CORN,
-    "corn":       CropType.CORN,
-    "grau":       CropType.WHEAT,
-    "wheat":      CropType.WHEAT,
-    "floarea":    CropType.SUNFLOWER,
-    "sunflower":  CropType.SUNFLOWER,
-    "soia":       CropType.SOYBEAN,
-    "soybean":    CropType.SOYBEAN,
-    "rapita":     CropType.RAPESEED,
-    "rapeseed":   CropType.RAPESEED,
-    "orz":        CropType.BARLEY,
-    "barley":     CropType.BARLEY,
-    "cartof":     CropType.POTATO,
-    "potato":     CropType.POTATO,
-    "sfecla":     CropType.SUGAR_BEET,
-    "vie":        CropType.VINEYARD,
-    "viticultura": CropType.VINEYARD,
-    "livada":     CropType.ORCHARD,
+    # Corn / Maize
+    "porumb":       CropType.CORN,
+    "corn":         CropType.CORN,
+    # Wheat (covers "grau", "grâu", "grau comun", "grâu comun de toamnă", etc.)
+    "grau":         CropType.WHEAT,
+    "wheat":        CropType.WHEAT,
+    # Sunflower ("floarea soarelui")
+    "floarea":      CropType.SUNFLOWER,
+    "sunflower":    CropType.SUNFLOWER,
+    # Soybean
+    "soia":         CropType.SOYBEAN,
+    "soybean":      CropType.SOYBEAN,
+    # Rapeseed
+    "rapita":       CropType.RAPESEED,
+    "rapeseed":     CropType.RAPESEED,
+    # Barley
+    "orz":          CropType.BARLEY,
+    "barley":       CropType.BARLEY,
+    # Potato
+    "cartof":       CropType.POTATO,
+    "potato":       CropType.POTATO,
+    # Sugar beet
+    "sfecla":       CropType.SUGAR_BEET,
+    # Vineyard
+    "vie":          CropType.VINEYARD,
+    "viticultura":  CropType.VINEYARD,
+    # Orchard
+    "livada":       CropType.ORCHARD,
+    # Meadow / hay ("fanete" after diacritic stripping)
+    "fanete":       CropType.MEADOW,
+    "meadow":       CropType.MEADOW,
+    "grassland":    CropType.MEADOW,
+    "pasune":       CropType.MEADOW,
 }
 
 
+def _strip_diacritics(text: str) -> str:
+    """Replace Romanian diacritics with their ASCII equivalents.
+
+    Covers the characters present in APIA export files:
+    â/Â → a, ă/Ă → a, î/Î → i, ș/Ş/ţ/Ţ → s/t.
+    """
+    table = str.maketrans("âÂăĂîÎșȘşŞțȚţŢ", "aAaAiIsSSStTtT")
+    return text.translate(table)
+
+
 def _detect_crop_type(hint: str | None) -> CropType:
-    """Map a free-text APIA crop description to a CropType enum value."""
+    """Map a free-text APIA crop description to a CropType enum value.
+
+    Normalizes Romanian diacritics before matching so that strings like
+    'GRÂU COMUN de toamnă' correctly resolve to WHEAT.
+    """
     if not hint:
         return CropType.UNKNOWN
-    lower = hint.lower()
+    normalized = _strip_diacritics(hint).lower()
     for keyword, crop in _CROP_MAP.items():
-        if keyword in lower:
+        if keyword in normalized:
             return crop
     return CropType.UNKNOWN
 
@@ -325,6 +355,7 @@ async def confirm_upload(
     # Wire up ParcelService for this request's DB session
     parcel_service = ParcelService(parcel_repo=ParcelRepositoryImpl(session))
     created_ids = []
+    skipped_duplicates: list[str] = []
 
     for raw in raw_parcels:
         preview = GpxParcelPreview(**raw)
@@ -348,22 +379,45 @@ async def confirm_upload(
                 "Parcel created from GPX: id=%s name=%r owner=%s",
                 parcel.id, parcel.name, current_user.id,
             )
+        except ParcelAlreadyExistsError:
+            logger.warning(
+                "Parcel '%s' already exists for owner=%s — skipping duplicate.",
+                preview.name, current_user.id,
+            )
+            skipped_duplicates.append(preview.name)
         except Exception as exc:
             # Log but continue — partial success is better than full failure
             logger.error(
                 "Failed to create parcel '%s' from GPX: %s", preview.name, exc
             )
 
-    if not created_ids:
+    if not created_ids and not skipped_duplicates:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="All parcel creations failed. Check geometry validity.",
         )
 
+    # If every parcel was a duplicate and nothing new was created, return 409
+    if not created_ids and skipped_duplicates:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"All {len(skipped_duplicates)} parcel(s) already exist: "
+                + ", ".join(f"'{n}'" for n in skipped_duplicates)
+            ),
+        )
+
     # Mark session as confirmed (short TTL for idempotency window)
     await gpx_service.mark_session_confirmed(token)
 
+    parts = [f"{len(created_ids)} parcel(s) imported and monitoring started."]
+    if skipped_duplicates:
+        parts.append(
+            f"{len(skipped_duplicates)} duplicate(s) skipped: "
+            + ", ".join(f"'{n}'" for n in skipped_duplicates)
+        )
+
     return ConfirmUploadResponse(
         created_parcel_ids=created_ids,
-        message=f"{len(created_ids)} parcel(s) imported and monitoring started.",
+        message=" ".join(parts),
     )

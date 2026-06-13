@@ -36,36 +36,35 @@ from typing import Optional
 class CropType(str, Enum):
     """Enumeration of supported crop types for agronomy-specific alerts.
 
-    Using ``str`` as a mixin makes JSON serialization trivial and allows
-    direct comparison with raw string values when parsing external data.
+    Values are UPPERCASE to match the PostgreSQL enum created by the initial
+    migration (which captured member names, not values).
     """
 
-    WHEAT = "wheat"
-    CORN = "corn"
-    SUNFLOWER = "sunflower"
-    SOYBEAN = "soybean"
-    RAPESEED = "rapeseed"
-    BARLEY = "barley"
-    POTATO = "potato"
-    SUGAR_BEET = "sugar_beet"
-    VINEYARD = "vineyard"
-    ORCHARD = "orchard"
-    OTHER = "other"
-    UNKNOWN = "unknown"
+    WHEAT = "WHEAT"
+    CORN = "CORN"
+    SUNFLOWER = "SUNFLOWER"
+    SOYBEAN = "SOYBEAN"
+    RAPESEED = "RAPESEED"
+    BARLEY = "BARLEY"
+    POTATO = "POTATO"
+    SUGAR_BEET = "SUGAR_BEET"
+    VINEYARD = "VINEYARD"
+    ORCHARD = "ORCHARD"
+    MEADOW = "MEADOW"
+    OTHER = "OTHER"
+    UNKNOWN = "UNKNOWN"
 
 
 class ParcelStatus(str, Enum):
     """Lifecycle status of a parcel within the system.
 
-    Transitions:
-        ACTIVE  → ARCHIVED  (user deactivates parcel)
-        ACTIVE  → PENDING   (re-import / ownership transfer started)
-        PENDING → ACTIVE    (import/transfer confirmed)
+    Values are UPPERCASE to match the PostgreSQL enum created by the initial
+    migration (which captured member names, not values).
     """
 
-    PENDING = "pending"    # Imported but not yet validated / activated
-    ACTIVE = "active"      # Fully operational; eligible for anomaly detection
-    ARCHIVED = "archived"  # Soft-deleted; retained for historical reporting
+    PENDING = "PENDING"
+    ACTIVE = "ACTIVE"
+    ARCHIVED = "ARCHIVED"
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +128,7 @@ class Parcel:
     # --- Analytics Cache (denormalised for fast reads) ---
     last_ndvi: Optional[float] = field(default=None)
     last_ndvi_at: Optional[datetime] = field(default=None)
+    last_anomaly_status: Optional[str] = field(default=None)
 
     # ------------------------------------------------------------------
     # Post-init validation

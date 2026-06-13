@@ -146,6 +146,12 @@ class Token(BaseModel):
     expires_in: int = Field(..., description="Access token lifetime in seconds.")
 
 
+class RefreshTokenRequest(BaseModel):
+    """Request body for POST /api/v1/users/refresh."""
+
+    refresh_token: str = Field(..., description="JWT refresh token.")
+
+
 class TokenData(BaseModel):
     """Internal model for decoded JWT payload — used in security dependency."""
 

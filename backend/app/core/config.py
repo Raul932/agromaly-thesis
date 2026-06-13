@@ -87,7 +87,8 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     OPENAI_API_KEY: str = Field(default="")
     OPENAI_EMBEDDING_MODEL: str = Field(default="text-embedding-3-small")
-    OPENAI_CHAT_MODEL: str = Field(default="gpt-4o-mini")
+    OPENAI_CHAT_MODEL: str = Field(default="gpt-4o")
+    OPENAI_TEMPERATURE: float = Field(default=0.7)
 
     # ------------------------------------------------------------------
     # Weather API
@@ -107,6 +108,10 @@ class Settings(BaseSettings):
     USE_MOCK_SATELLITE: bool = Field(
         default=False,
         description="If True, use mock NDVI data instead of real Sentinel Hub API",
+    )
+    MAPBOX_ACCESS_TOKEN: str = Field(
+        default="",
+        description="Public pk.* token for Mapbox satellite tile analysis",
     )
 
     # ------------------------------------------------------------------

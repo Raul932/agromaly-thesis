@@ -15,6 +15,7 @@ class Analysis {
   final int recordsAnalyzed;
   final double cloudGapRatio;
   final String recommendation;
+  final Map<String, dynamic>? weatherContext;
 
   Analysis({
     required this.parcelId,
@@ -30,6 +31,7 @@ class Analysis {
     required this.recordsAnalyzed,
     required this.cloudGapRatio,
     required this.recommendation,
+    this.weatherContext,
   });
 
   factory Analysis.fromJson(Map<String, dynamic> json) {
@@ -49,6 +51,7 @@ class Analysis {
       recordsAnalyzed: json['records_analyzed'] as int,
       cloudGapRatio: (json['cloud_gap_ratio'] as num).toDouble(),
       recommendation: json['recommendation'] as String,
+      weatherContext: json['weather_context'] as Map<String, dynamic>?,
     );
   }
 

@@ -31,6 +31,45 @@ class ParcelProvider extends ChangeNotifier {
     }
   }
 
+  /// Delete a parcel and remove it from the local list immediately.
+  Future<bool> deleteParcel(String parcelId) async {
+    try {
+      await _service.deleteParcel(parcelId);
+      _parcels = _parcels.where((p) => p.id != parcelId).toList();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Update parcel metadata and reflect changes locally.
+  Future<bool> updateParcel(
+    String parcelId, {
+    String? name,
+    String? description,
+    String? cropType,
+  }) async {
+    _error = null;
+    try {
+      final updated = await _service.updateParcel(
+        parcelId,
+        name: name,
+        description: description,
+        cropType: cropType,
+      );
+      _parcels = _parcels.map((p) => p.id == parcelId ? updated : p).toList();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Create a new parcel and refresh the list.
   Future<bool> addParcel({
     required String name,

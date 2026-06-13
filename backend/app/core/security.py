@@ -152,6 +152,30 @@ def create_refresh_token(
     return jwt.encode(payload, cfg.SECRET_KEY, algorithm=cfg.ALGORITHM)
 
 
+def decode_refresh_token(token: str, *, settings: Optional[Settings] = None) -> dict:
+    """Decode and validate a JWT refresh token.
+
+    Raises:
+        HTTPException 401: If the token is expired, malformed, or has wrong type.
+    """
+    cfg = settings or get_settings()
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid refresh token.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, cfg.SECRET_KEY, algorithms=[cfg.ALGORITHM])
+        if payload.get("type") != _TOKEN_TYPE_REFRESH:
+            raise credentials_exception
+        if "sub" not in payload:
+            raise credentials_exception
+        return payload
+    except JWTError:
+        logger.warning("Refresh token validation failed (JWTError).")
+        raise credentials_exception
+
+
 def decode_access_token(token: str, *, settings: Optional[Settings] = None) -> dict:
     """Decode and validate a JWT access token.
 

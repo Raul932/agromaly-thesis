@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import PersistenceError
 from app.domain.entities.user import User
 from app.domain.interfaces.user_repository import IUserRepository
 from app.infrastructure.db.models.user_orm import UserORM
@@ -49,8 +50,18 @@ class UserRepositoryImpl(IUserRepository):
             return merged.to_domain()
         except IntegrityError as exc:
             logger.error("Integrity error saving user id=%s: %s", user.id, exc)
+            # Detect specifically an email uniqueness violation by constraint name
+            orig = getattr(exc, "orig", None)
+            constraint = getattr(getattr(orig, "diag", None), "constraint_name", "") or ""
+            orig_str = str(orig or exc).lower()
+            if constraint in ("uix_users_email_lower", "users_email_key") or (
+                "email" in orig_str and ("unique" in orig_str or "duplicate" in orig_str)
+            ):
+                raise UserPersistenceError(
+                    "email_already_registered"
+                ) from exc
             raise UserPersistenceError(
-                f"Failed to save user '{user.email}': email already exists or constraint violated."
+                f"Database integrity error while saving user id={user.id}."
             ) from exc
         except SQLAlchemyError as exc:
             logger.error("DB error saving user id=%s: %s", user.id, exc)
@@ -123,5 +134,5 @@ class UserRepositoryImpl(IUserRepository):
             raise UserPersistenceError("DB error listing users.") from exc
 
 
-class UserPersistenceError(Exception):
+class UserPersistenceError(PersistenceError):
     """Raised when a database operation on User fails."""
