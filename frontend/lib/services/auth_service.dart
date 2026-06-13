@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/api_client.dart';
 import '../core/constants.dart';
@@ -50,16 +49,14 @@ class AuthService {
     required String password,
     required String passwordConfirm,
   }) async {
-    final uri = Uri.parse('$kBaseUrl/users/signup');
-    final response = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
+    final response = await ApiClient.post(
+      '/users/signup',
+      body: {
         'email': email,
         'full_name': fullName,
         'password': password,
         'password_confirm': passwordConfirm,
-      }),
+      },
     );
 
     if (response.statusCode == 201) {
